@@ -1,0 +1,22 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[[source]]
+url = "p-lock"
+verify_ssl = true
+name = ""
+
+[packages]
+mujoco = "*"
+mujoco-mjx = "*"
+diffrax = "*"
+jax = {extras = ["cuda"], version = "*"}
+optax = "*"
+matplotlib = "*"
+
+[dev-packages]
+
+[requires]
+python_version = "3.9"
