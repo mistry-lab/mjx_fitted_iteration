@@ -5,6 +5,8 @@ name = "pypi"
 
 [packages]
 mujoco = "*"
+mujoco-mjx = "*"
+equinox = "*"
 
 [dev-packages]
 
