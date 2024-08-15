@@ -7,6 +7,8 @@ name = "pypi"
 mujoco = "*"
 mujoco-mjx = "*"
 equinox = "*"
+optax = "*"
+pyaml = "*"
 
 [dev-packages]
 

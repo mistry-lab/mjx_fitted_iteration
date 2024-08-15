@@ -52,4 +52,33 @@ from mj_vis import animate_trajectory
 trajectory_np = np.array(trajectory.clone())
 d = mujoco.MjData(model)
 animate_trajectory(trajectory_np[0, ...], d, model)
-# animate_trajectory(trajectory_np, dx, m)
+
+
+import equinox as eqx
+from equinox import nn
+
+# Define the neural network
+net = nn.Sequential(
+    eqx.nn.Linear(4, 64),
+    jax.nn.softplus,
+    eqx.nn.Linear(64, 64),
+    jax.nn.softplus,
+    eqx.nn.Linear(64, 1),
+)
+
+class ValueFunction(eqx.Module):
+    def __init__(self, dims: list, act):
+        # use dims to define an eqx Sequential model with linear layers use act as activation
+        _net = []
+        for d in dims[:-2]:
+            _net.append(eqx.nn.Linear(d, dims[dims.index(d) + 1]))
+            _net.append(act)
+
+        _net.append(eqx.nn.Linear(dims[-2], dims[-1]))
+        self.net = eqx.nn.Sequential(*_net)
+
+    def __call__(self, x):
+        return self.net(x)
+
+    def update(self, loss):
+        self.optimizer.update(loss)
