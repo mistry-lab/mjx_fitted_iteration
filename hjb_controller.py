@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import mujoco
-from mujoco import mjx
+from mujoco import mjx, mjtDataType
 import equinox as eqx
 
 
@@ -22,11 +22,28 @@ class ValueFunction(eqx.Module):
 
 
 class Controller(object):
-    def __init__(self, net):
+    def __init__(self, net, model, data):
         self._vf = net
+        self._m = model
+        self._dx = data
 
+    # setter for the data
+    @property
+    def data(self):
+        return self._dx
+
+    @data.setter
+    def data(self, data):
+        self._dx = data
 
     def __call__(self, x):
+        mass_mat = mjx.full_m(self._m, self._dx.qpos)
+        # invert the mass matrix
+        inv_mass_mat = jnp.linalg.inv(mass_mat)
+        # compute derivative of the value function with respect to the state
+        dvdx = jax.grad(self._vf)(x)
+        u = -jnp.dot(inv_mass_mat, self._vf(x))
+
         return self._vf(x)
 
 

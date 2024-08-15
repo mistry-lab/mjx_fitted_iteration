@@ -4,6 +4,7 @@ from mujoco import mjx
 import jax
 import jax.numpy as jnp
 import optax
+import tqdm
 from hjb_controller import ValueFunction, Controller
 
 
@@ -25,7 +26,6 @@ class Runner(object):
         self._vf = ValueFunction(self._cfg._dims, self._cfg._act)
         self._ctrl = Controller(self._vf)
 
-
     def _simulate(self, x_inits, m, nsteps):
         dx = mjx.make_data(m)
         qp = x_inits[:m.nq]
@@ -41,25 +41,23 @@ class Runner(object):
         _, traj = jax.lax.scan(mjx_step, dx_n, None, length=nsteps)
         return traj
 
-
     def _gen_targets(self, traj, cst_func):
         costs = cst_func(traj)
         costs = jnp.flip(costs, axis=0)
         targets = jnp.flip(jnp.cumsum(costs, axis=0), axis=0)
         return targets
 
-
     def train(self, x_inits, cst_func):
         traj = self._simulate(x_inits, self._m, self._cfg._nsteps)
         targets = self._gen_targets(traj, cst_func)
         self._opt = self._opt.init(self._vf.net)
 
-        def loss_fn(params):
-            return jnp.mean(jnp.square(self._vf.net(params, traj) - targets))
+        def loss_fn(traj):
+            return jnp.mean(jnp.square(self._vf.net(traj) - targets))
 
-        for i in range(self._cfg._epochs):
+        for _ in tqdm.trange(self._cfg._epochs, desc='Epochs completed'):
+            # tqdm progress of the training
             grad = jax.grad(loss_fn)(self._opt.target)
             updates, opt_state = self._opt.update(grad, self._opt.state)
             self._opt = self._opt.replace(state=opt_state)
             self._vf.net = optax.apply_updates(self._vf.net, updates)
-
