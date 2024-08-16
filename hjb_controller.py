@@ -37,7 +37,7 @@ class Controller(object):
         self._dx = data
 
     def __call__(self, x):
-        mass_mat = mjx.full_m(self._m, self._dx.qpos)
+        mass_mat = mjx.full_m(self._m, self._dx)
         # invert the mass matrix
         inv_mass_mat = jnp.linalg.inv(mass_mat)
         # compute derivative of the value function with respect to the state

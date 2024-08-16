@@ -3,10 +3,8 @@ import jax.numpy as jnp
 import numpy as np
 import mujoco
 from mujoco import mjx
-# Initialize devices and model
 devices = jax.devices()
 is_gpu = next((d for d in devices if 'gpu' in d.device_kind.lower()), None)
-
 model = mujoco.MjModel.from_xml_path('/home/daniel/Repos/OptimisationBasedControl/models/cartpole.xml')
 mx = mjx.put_model(model, device=is_gpu)
 
