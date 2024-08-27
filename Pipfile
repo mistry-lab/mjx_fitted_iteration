@@ -9,7 +9,6 @@ mujoco-mjx = "*"
 equinox = "*"
 optax = "*"
 pyaml = "*"
-tqdm = "*"
 
 [dev-packages]
 

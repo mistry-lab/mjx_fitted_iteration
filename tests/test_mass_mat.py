@@ -28,7 +28,7 @@ def dfdu_exact(m, dx, x):
 
 dfdu_ad = jax.jacobian(f, argnums=2)
 u = jax.random.normal(jax.random.PRNGKey(0), shape=(model.nu,))
-dx1, dx2 = mjx.make_data(mx), mjx.make_data(mx)
+dx1, dx2 = mjx.step(mjx.make_data(mx)), mjx.step(mjx.make_data(mx))
 
 start = time.time()
 for _ in range(5):
@@ -42,6 +42,3 @@ for _ in range(5):
     x = jax.random.normal(jax.random.PRNGKey(0), shape=(2, model.nq)) * 0.3
     dfdu_ad (mx, dx1, u, x)
 print(f"AD df/du time {time.time() - start}")
-
-
-
