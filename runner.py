@@ -2,19 +2,26 @@ import mujoco
 from mujoco import mjx
 import jax
 import jax.numpy as jnp
+import numpy as np
 import optax
 import equinox as eqx
+import wandb
+from mj_vis import animate_trajectory
 from utils.tqdm import trange
 from hjb_controller import Controller
 from config.cps import cartpole_cfg
 
+#init wandb
+wandb.init(project="fvi", entity="danielhfn")
 cfg = {"cartpole": cartpole_cfg}
 
 class Runner(object):
     def __init__(self, name):
         self._cfg = cfg[name]
         is_gpu = next((d for d in  jax.devices() if 'gpu' in d.device_kind.lower()), None)
-        self._mx = mjx.put_model(mujoco.MjModel.from_xml_path(self._cfg.model_path), device=is_gpu)
+        self._m = mujoco.MjModel.from_xml_path(self._cfg.model_path)
+        self._d = mujoco.MjData(self._m)
+        self._mx = mjx.put_model(self._m, device=is_gpu)
         self._opt = optax.adam(self._cfg.lr)
         self.x_key, self.model_key = jax.random.split(jax.random.PRNGKey(self._cfg.seed))
         self._ctrl = Controller(self._cfg.dims, self._cfg.act, self.model_key)
@@ -56,20 +63,24 @@ class Runner(object):
         opt_state = optim.init(eqx.filter(self._ctrl.vf, eqx.is_array))
 
         @eqx.filter_jit
-        def make_step(model, opt_state, loss, x, y):
+        def make_step(model, state, loss, x, y):
             params, static = eqx.partition(model, eqx.is_array)
             loss_value, grads = jax.value_and_grad(loss)(params, static, x, y)
-            updates, opt_state = optim.update(grads, opt_state, model)
+            updates, state = optim.update(grads, state, model)
             model = eqx.apply_updates(model, updates)
-            return model, opt_state, loss_value
+            return model, state, loss_value
 
         def loss_fn(params, static, x, y):
             model = eqx.combine(params, static)
             return jnp.mean(jnp.square(model(x) - y))
 
-        for _ in trange(self._cfg.epochs, desc='Epochs completed'):
+        for e in trange(self._cfg.epochs, desc='Epochs completed'):
             traj = self._simulate(self._cfg.nsteps)
             targets = self._gen_targets(traj)
-            self._ctrl.vf, opt_state, loss = make_step(self._ctrl.vf, opt_state, loss_fn, traj, targets)
+            self._ctrl.vf, opt_state, loss_value = make_step(self._ctrl.vf, opt_state, loss_fn, traj, targets)
+            wandb.log({"loss": loss_value})
 
+            if e % 100 == 0:
+                traj = np.array(traj[jax.random.randint(self.x_key, (5,), 0, self._cfg.nsteps)].squeeze())
+                animate_trajectory(traj, self._d, self._m)
 

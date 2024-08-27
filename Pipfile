@@ -9,6 +9,7 @@ mujoco-mjx = "*"
 equinox = "*"
 optax = "*"
 pyaml = "*"
+wandb = "*"
 
 [dev-packages]
 
