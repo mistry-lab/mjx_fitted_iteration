@@ -1,16 +1,16 @@
 import jax
-from config import Config
+from .config import Config
 from jax import numpy as jnp
 
-def _run_cst(x): return 0
-def _ctrl_cst(u): return jnp.einsum('...ti,ij,...tj->...t', u, jnp.array([[1, 0], [0, 0.1]]), u)
-def _terminal_cost(x): return jnp.einsum('...ti,ij,...tj->...t', x, jnp.array([[100, 0], [0, 1]]), x)
-def _init_gen(key):
-    qp = jax.random.uniform(key, (1,), minval=-0.1, maxval=0.1)
-    qc = jax.random.uniform(key, (1,), minval=-0.1, maxval=0.1)
-    vc = jax.random.uniform(key, (1,), minval=-0.1, maxval=0.1)
-    vp = jax.random.uniform(key, (1,), minval=-0.1, maxval=0.1)
-    return jnp.concatenate([qc, qp, vc, vp], axis=0)
+def _run_cst(x): return jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([0, 0, 0, 0])), x)
+def _ctrl_cst(u): u = jnp.einsum('...ti,ij,...tj->...t', u, jnp.array([[1]]), u); u = u.at[..., -1].set(0); return u
+def _terminal_cost(x): return jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([25, 100, 0.25, 1])), x)
+def init_gen(batch, key):
+    qp = jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1)
+    qc = jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1)
+    vc = jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1)
+    vp = jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1)
+    return jnp.concatenate([qc, qp, vc, vp], axis=1)
 
 
 cartpole_cfg = Config(
@@ -19,10 +19,14 @@ cartpole_cfg = Config(
     lr=1e-3,
     seed=0,
     nsteps=100,
-    epochs=1000,
+    epochs=100,
+    batch=1000,
+    vis=10,
+    R=jnp.array([[1]]),
     act=jax.nn.softplus,
     run_cst=_run_cst,
     terminal_cst=_terminal_cost,
     ctrl_cst=_ctrl_cst,
-    init_gen=_init_gen
+    init_gen=init_gen,
+    state_encoder=lambda x: x
 )

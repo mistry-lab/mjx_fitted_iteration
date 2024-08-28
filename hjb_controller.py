@@ -3,6 +3,7 @@ import jax.numpy as jnp
 from mujoco import mjx
 import equinox as eqx
 
+
 class ValueFunc(eqx.Module):
     layers: list
     act: lambda x: jax.nn.relu(x)
@@ -19,8 +20,9 @@ class ValueFunc(eqx.Module):
 
 
 class Controller(object):
-    def __init__(self, dims, act, key):
+    def __init__(self, dims, act, key, R):
         self.vf = ValueFunc(dims, key, act)
+        self._R = R
 
     def __call__(self, mx, dx):
         x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
@@ -29,5 +31,8 @@ class Controller(object):
         invM = jnp.linalg.inv(M)
         dvdx = jax.jacrev(self.vf)(x)
         G = jnp.vstack([jnp.zeros_like(invM), invM])
-        u = -(G.T @ dvdx.T)[act_id , :].squeeze()
-        return u
+        invR = jnp.linalg.inv(self._R)
+        u = (-1/2 * invR @ G.T[act_id , :] @ dvdx.T).squeeze()
+        ctrl = dx.ctrl.at[:].set(u)
+        dx = dx.replace(ctrl=ctrl)
+        return dx
