@@ -20,25 +20,26 @@ def f(m, dx, u, x):
     mjx.step(m, dx)
     return dx.qacc
 
+@jax.jit
 def dfdu_exact(m, dx, x):
     qpos = dx.qpos.at[:].set(x[0, :])
     qvel = dx.qvel.at[:].set(x[1, :])
     dx = dx.replace(qpos=qpos, qvel=qvel)
     return get_ctrl_auth(m, dx, get_act_idx(m))
 
-dfdu_ad = jax.jacobian(f, argnums=2)
+dfdu_ad = jax.jit(jax.jacobian(f, argnums=2))
 u = jax.random.normal(jax.random.PRNGKey(0), shape=(model.nu,))
-dx1, dx2 = mjx.step(mjx.make_data(mx)), mjx.step(mjx.make_data(mx))
+dx1, dx2 = mjx.step(mx, mjx.make_data(mx)), mjx.step(mx, mjx.make_data(mx))
 
-start = time.time()
 for _ in range(5):
+    start = time.time()
     x = jax.random.normal(jax.random.PRNGKey(0), shape=(2, model.nq)) * 0.3
     dfdu_exact(mx, dx2, x)
-print(f"Exact df/du time {time.time() - start}")
+    print(f"Exact df/du time {time.time() - start}")
 
 
-start = time.time()
 for _ in range(5):
+    start = time.time()
     x = jax.random.normal(jax.random.PRNGKey(0), shape=(2, model.nq)) * 0.3
-    dfdu_ad (mx, dx1, u, x)
-print(f"AD df/du time {time.time() - start}")
+    dfdu_ad(mx, dx1, u, x)
+    print(f"AD df/du time {time.time() - start}")

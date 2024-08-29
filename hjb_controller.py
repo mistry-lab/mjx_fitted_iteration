@@ -36,3 +36,17 @@ class Controller(object):
         ctrl = dx.ctrl.at[:].set(u)
         dx = dx.replace(ctrl=ctrl)
         return dx
+
+
+def ctrl(mx, dx, vf, R):
+    x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
+    act_id = mx.actuator_trnid[:, 0]
+    M = mjx.full_m(mx, dx)
+    invM = jnp.linalg.inv(M)
+    dvdx = jax.jacrev(vf)(x)
+    G = jnp.vstack([jnp.zeros_like(invM), invM])
+    invR = jnp.linalg.inv(R)
+    u = (-1/2 * invR @ G.T[act_id , :] @ dvdx.T).squeeze()
+    ctrl = dx.ctrl.at[:].set(u)
+    dx = dx.replace(ctrl=ctrl)
+    return dx

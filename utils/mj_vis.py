@@ -9,8 +9,8 @@ def animate_trajectory(trajectory: np.ndarray, d: mujoco.MjData, m: mujoco.MjMod
         for b in range(trajectory.shape[0]):
             for i in range(trajectory.shape[1]):
                 step_start = time.time()
-                qpos = trajectory[b, i, 0]
-                qvel = trajectory[b, i, 1]
+                qpos = trajectory[b, i, :m.nq]
+                qvel = trajectory[b, i, m.nq:]
                 d.qpos[:] = qpos
                 d.qvel[:] = qvel
                 mujoco.mj_forward(m, d)
