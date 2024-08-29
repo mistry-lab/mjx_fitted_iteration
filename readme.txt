@@ -1,4 +1,5 @@
 ***Implementation of Neural Optimal Control***
+
 NOTE: We rely on cuda enabled jax library. This does is not included in the Pipfile.
 - run pipenv shell
 - Depending on preference either install 
