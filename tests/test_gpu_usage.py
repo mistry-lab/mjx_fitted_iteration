@@ -9,13 +9,9 @@ from mujoco import mjx
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.mj_vis import animate_trajectory
 from utils.tqdm import trange
-model = mujoco.MjModel.from_xml_path('../xmls/cartpole.xml')
-data = mujoco.MjData(model)
-mjx_model = mjx.put_model(model)
 
 # TODO pass in mx as an argument
-
-def simulate_single(x, nsteps):
+def simulate_single(x, mjx_model, nsteps):
     def batched_step(mjx_data, _):
         dx = jax.lax.stop_gradient(mjx.step(mjx_model, mjx_data))
         return dx, jnp.concatenate([dx.qpos, dx.qvel], axis=0)
@@ -39,11 +35,14 @@ def simulate_single(x, nsteps):
 
 @jax.jit
 def simulate(x, nsteps=100):
-    trajs = jax.vmap(simulate_single, in_axes=(0, None))(x, nsteps)
+    trajs = jax.vmap(simulate_single, in_axes=(0, None, None))(x, mjx_model, nsteps)
     return trajs
 
 
 stats = []
+model = mujoco.MjModel.from_xml_path('../xmls/cartpole.xml')
+data = mujoco.MjData(model)
+mjx_model = mjx.put_model(model)
 for e in trange(10):
   start = time.time()
   pos = jax.random.uniform(jax.random.PRNGKey(0), (1000, model.nq), minval=-0.1, maxval=0.1)

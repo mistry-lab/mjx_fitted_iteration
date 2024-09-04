@@ -1,10 +1,16 @@
-from jax import numpy as jnp
+from typing import Callable, List, NamedTuple
 from dataclasses import dataclass
+from functools import partial
+from jax import numpy as jnp
+import jax.tree_util
 
-@dataclass
+@partial(jax.tree_util.register_dataclass,
+         data_fields=['R'],
+         meta_fields=['model_path', 'dims', 'lr', 'seed', 'nsteps', 'epochs', 'batch', 'vis'])
+@dataclass(frozen=True)
 class Config:
     model_path: str
-    dims: list
+    dims: List[int]
     lr: float
     seed: int
     nsteps: int
@@ -12,9 +18,13 @@ class Config:
     batch: int
     vis: int
     R: jnp.ndarray
-    act: callable
-    run_cst: callable
-    terminal_cst: callable
-    ctrl_cst: callable
-    init_gen: callable
-    state_encoder: callable
+
+class Callbacks(NamedTuple):
+    run_cost: Callable[[jnp.ndarray], jnp.ndarray]
+    terminal_cost: Callable[[jnp.ndarray], jnp.ndarray]
+    control_cost: Callable[[jnp.ndarray], jnp.ndarray]
+    init_gen: Callable[[int, jnp.ndarray], jnp.ndarray]
+    state_encoder: Callable[[jnp.ndarray], jnp.ndarray]
+    net: Callable[[jnp.ndarray], jnp.ndarray]
+
+Context = NamedTuple('Context', [('cfg', Config), ('cbs', Callbacks)])

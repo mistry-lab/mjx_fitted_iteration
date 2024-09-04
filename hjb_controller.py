@@ -8,10 +8,10 @@ class ValueFunc(eqx.Module):
     layers: list
     act: lambda x: jax.nn.relu(x)
 
-    def __init__(self, dims: list, key, act):
+    def __init__(self, dims: list, key):
         keys = jax.random.split(key, len(dims))
         self.layers = [eqx.nn.Linear(dims[i], dims[i + 1], key=keys[i]) for i in range(len(dims) - 1)]
-        self.act = act
+        self.act = jax.nn.softplus
 
     def __call__(self, x):
         for layer in self.layers[:-1]:
