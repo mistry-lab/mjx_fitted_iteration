@@ -10,6 +10,7 @@ equinox = "*"
 optax = "*"
 pyaml = "*"
 wandb = "*"
+ipython = "*"
 
 [dev-packages]
 
