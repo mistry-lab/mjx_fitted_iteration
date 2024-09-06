@@ -19,7 +19,7 @@ def controlled_simulate(x_inits, mx, ctx):
         dvdx = jax.jacrev(vf)(x)
         G = jnp.vstack([jnp.zeros_like(invM), invM])
         invR = jnp.linalg.inv(R)
-        u = (-1 / 2 * invR @ G.T[act_id, :] @ dvdx.T).squeeze()
+        u = (-1/2 * invR @ G.T[act_id, :] @ dvdx.T).squeeze()
         ctrl = dx.ctrl.at[:].set(u)
         dx = dx.replace(ctrl=ctrl)
         return dx

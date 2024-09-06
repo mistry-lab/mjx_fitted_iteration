@@ -37,7 +37,6 @@ for _ in range(5):
     dfdu_exact(mx, dx2, x)
     print(f"Exact df/du time {time.time() - start}")
 
-
 for _ in range(5):
     start = time.time()
     x = jax.random.normal(jax.random.PRNGKey(0), shape=(2, model.nq)) * 0.3
