@@ -6,7 +6,7 @@ import jax.tree_util
 
 @partial(jax.tree_util.register_dataclass,
          data_fields=['R'],
-         meta_fields=['model_path', 'dims', 'lr', 'seed', 'nsteps', 'epochs', 'batch', 'vis'])
+         meta_fields=['model_path', 'dims', 'lr', 'seed', 'nsteps', 'epochs', 'batch', 'vis', 'dt'])
 @dataclass(frozen=True)
 class Config:
     model_path: str
@@ -17,6 +17,7 @@ class Config:
     epochs: int
     batch: int
     vis: int
+    dt: float
     R: jnp.ndarray
 
 class Callbacks(NamedTuple):

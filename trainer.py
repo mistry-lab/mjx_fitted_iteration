@@ -9,9 +9,21 @@ import equinox as eqx
 import wandb
 from utils.mj_vis import animate_trajectory
 from utils.tqdm import trange
-from config.cps import ctx
+from config.cps import ctx, Context
 from simulate import controlled_simulate
 from hjb_controller import Controller
+
+def gen_targets_mapped(x, u, ctx:Context):
+    xs, xt = x[:-1], x[-1]
+    xt = xt if len(xt.shape) == 2 else xt.reshape(1, xt.shape[-1])
+    ucost = ctx.cbs.control_cost(u)
+    xcst = ctx.cbs.run_cost(xs)
+    tcst = ctx.cbs.terminal_cost(xt)
+    xcost = jnp.concatenate([xcst, tcst]) + ucost
+    costs = jnp.flip(xcost)
+    targets = jnp.flip(jnp.cumsum(costs))
+
+    return targets
 
 class Runner(object):
     def __init__(self, cfg):
@@ -19,21 +31,6 @@ class Runner(object):
         self._m = mujoco.MjModel.from_xml_path(self._cfg.model_path)
         self._d = mujoco.MjData(self._m)
         self.x_key, self.traj_select, self.model_key = jax.random.split(jax.random.PRNGKey(self._cfg.seed), num=3)
-
-    def _gen_targets_mapped(self, x, u):
-        @jax.jit
-        def csts(x, u):
-            xs, xt = x[:-1], x[-1]
-            xt = xt if len(xt.shape) == 2 else xt.reshape(1, xt.shape[-1])
-            ucost = self._cfg.ctrl_cst(u)
-            xcst = self._cfg.run_cst(xs)
-            tcst = self._cfg.terminal_cst(xt)
-            xcost = jnp.concatenate([xcst, tcst])
-            return xcost + ucost
-
-        costs = jnp.flip(csts(x, u))
-        targets = jnp.flip(jnp.cumsum(costs))
-        return targets
 
     def train(self):
         mx = mjx.put_model(self._m)

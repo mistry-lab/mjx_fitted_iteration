@@ -37,6 +37,7 @@ ctx = Context(cfg=Config(
     epochs=100,
     batch=1000,
     vis=10,
+    dt=0.01,
     R=jnp.array([[1]])
     ),cbs=Callbacks(
         run_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([0, 0, 0, 0])), x),
@@ -47,7 +48,7 @@ ctx = Context(cfg=Config(
             jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1),
             jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1),
             jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1)
-        ], axis=1),
+        ], axis=1).squeeze(),
     state_encoder=lambda x: x,
     net=ValueFunc([4, 64, 64, 1], jax.random.PRNGKey(0)).__call__
     )

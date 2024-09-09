@@ -33,4 +33,5 @@ def controlled_simulate(x_inits, mx, ctx):
     dx = set_init(x_inits)
     _, batched_traj = jax.lax.scan(mjx_step, dx, None, length=ctx.cfg.nsteps)
     x, u = batched_traj[..., :-mx.nu], batched_traj[..., -mx.nu:]
+    u = u.at[-1].set(0.)
     return x, u
