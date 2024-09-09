@@ -8,7 +8,7 @@ from config.cps import ctx as cp_ctx
 from simulate import controlled_simulate
 import equinox as eqx
 
-wandb.init(project="fvi", entity="lonephd")
+wandb.init(project="fvi", anonymous="allow")
 configs = {"cartpole_swing_up": cp_ctx}
 
 if __name__ == '__main__':
