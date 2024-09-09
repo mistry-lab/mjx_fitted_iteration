@@ -2,6 +2,16 @@ import jax
 from jax import numpy as jnp
 import equinox as eqx
 from .config import Config, Callbacks, Context
+import os
+
+try:
+    # This works when __file__ is defined (e.g., in regular scripts)
+    base_path = os.path.dirname(__file__)
+except NameError:
+    # Fallback to current working directory (e.g., in interactive sessions)
+    base_path = os.getcwd()
+
+base_path = os.path.join(base_path, '../xmls')
 
 class ValueFunc(eqx.Module):
     layers: list
@@ -19,7 +29,7 @@ class ValueFunc(eqx.Module):
 
 
 ctx = Context(cfg=Config(
-    model_path='/home/daniel/Repos/OptimisationBasedControl/models/cartpole.xml',
+    model_path=os.path.join(base_path, 'cartpole.xml'),
     dims=[4, 64, 64, 1],
     lr=1e-3,
     seed=0,
