@@ -25,6 +25,20 @@ def gen_targets_mapped(x, u, ctx:Context):
 
     return targets
 
+def make_step(optim, model, state, loss, x, y):
+    params, static = eqx.partition(model, eqx.is_array)
+    loss_value, grads = jax.value_and_grad(loss)(params, static, x, y)
+    updates, state = optim.update(grads, state, model)
+    model = eqx.apply_updates(model, updates)
+    return model, state, loss_value
+
+def loss_fn(params, static, x, y):
+    model = eqx.combine(params, static)
+    pred = jax.vmap(model)(x.reshape(-1, x.shape[-1]))
+    y = y.reshape(-1, 1)
+    return jnp.mean(jnp.square(pred - y))
+
+
 class Runner(object):
     def __init__(self, cfg):
         self._cfg = cfg

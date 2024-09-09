@@ -50,6 +50,6 @@ ctx = Context(cfg=Config(
             jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1)
         ], axis=1).squeeze(),
     state_encoder=lambda x: x,
-    net=ValueFunc([4, 64, 64, 1], jax.random.PRNGKey(0)).__call__
+    net=ValueFunc([4, 64, 64, 1], jax.random.PRNGKey(0))
     )
 )
