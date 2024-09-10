@@ -22,7 +22,9 @@ def gen_targets_mapped(x, u, ctx:Context):
     costs = jnp.flip(xcost)
     targets = jnp.flip(jnp.cumsum(costs))
 
-    return targets
+    cost = targets[0] 
+
+    return targets, cost
 
 def make_step(optim, model, state, loss, x, y):
     params, static = eqx.partition(model, eqx.is_array)

@@ -12,9 +12,11 @@ import equinox as eqx
 import optax
 import copy
 import numpy as np
+import jax.numpy as jnp
 from utils.mj_vis import animate_trajectory
+import jax.debug
 
-wandb.init(project="fvi", anonymous="allow")
+wandb.init(project="fvi", anonymous="allow", mode='online')
 configs = {"cartpole_swing_up": cp_ctx, "double_integrator":di_ctx }
 
 
@@ -43,17 +45,25 @@ if __name__ == '__main__':
             # sim = jax.vmap(controlled_simulate, in_axes=(0, None, None))
             f_target = eqx.filter_jit(jax.vmap(gen_targets_mapped, in_axes=(0,0,None)))
             f_make_step = eqx.filter_jit(make_step)
-            for e in range(ctx.cfg.epochs):
+            for e in range(1):
                 key, xkey, tkey = jax.random.split(key, num = 3)
                 x_inits = ctx.cbs.init_gen(ctx.cfg.batch, xkey)
                 # time_init = time.time()
                 x, u = sim(x_inits, mx, ctx)
-                target  = f_target(x,u, ctx)
-                ctx.cbs.net, opt_state, loss_value = make_step(optim, ctx.cbs.net,opt_state, loss_fn,x, target)
-                wandb.log({"loss": loss_value, "net": ctx.cbs.net})
-                # print(f"Time taken: {time.time() - time_init}")
+                target, costs  = f_target(x,u, ctx)
 
-                if e % ctx.cfg.vis == 0 and e > 0:
+                for k in range(1000):
+                    ctx.cbs.net, opt_state, loss_value = make_step(optim, ctx.cbs.net,opt_state, loss_fn,x, target)
+                    wandb.log({"loss": loss_value, "cost": jnp.mean(costs)})
+                # jax.debug.breakpoint()
+                # print(f"Time taken: {time.time() - time_init}")
+                # jax.debug.print(ctx.cbs.net.layers)
+                print("\n\n-----------")
+                for layer in ctx.cbs.net.layers:
+                    print("weight : ", layer.weight)
+                    print("bias : ", layer.bias)
+
+                if e % ctx.cfg.vis == 0 :
                     xs = x[jax.random.randint(tkey, (5,), 0, ctx.cfg.nsteps)]
                     term_cst = ctx.cbs.terminal_cost(xs[...,-1,:])
                     print(f"Terminal cost is: {term_cst}")
