@@ -26,30 +26,31 @@ class ValueFunc(eqx.Module):
         for layer in self.layers[:-1]:
             x = self.act(layer(x))
         return self.layers[-1](x)
-
+        # PD controller
+        # f = lambda x: jnp.einsum('...i,ij,...j->...', x, jnp.array([[1.3, 1],[1,1.3]]), x)
+        # v = f(x)
+        # return v
 
 ctx = Context(cfg=Config(
-    model_path=os.path.join(base_path, 'cartpole.xml'),
+    model_path=os.path.join(base_path, 'doubleintegrator.xml'),
     dims=[4, 64, 64, 1],
     lr=1e-3,
     seed=0,
     nsteps=100,
     epochs=100,
-    batch=1000,
+    batch=10000,
     vis=10,
     dt=0.01,
-    R=jnp.array([[1]])
+    R=jnp.array([[0.001]])
     ),cbs=Callbacks(
-        run_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([0, 0, 0, 0])), x),
-        terminal_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([25, 100, 0.25, 1])), x),
-        control_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.array([[1]]), x).at[..., -1].set(0),
+        run_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([25, 0.25])), x),
+        terminal_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([25, 0.25])), x),
+        control_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.array([[0.001]]), x).at[..., -1].set(0),
         init_gen= lambda batch, key: jnp.concatenate([
-            jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1),
-            jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1),
-            jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1),
+            jax.random.uniform(key, (batch, 1), minval=-1., maxval=1.),
             jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1)
         ], axis=1).squeeze(),
     state_encoder=lambda x: x,
-    net=ValueFunc([4, 64, 64, 1], jax.random.PRNGKey(0))
+    net=ValueFunc([2, 64, 64, 1], jax.random.PRNGKey(0))
     )
 )
