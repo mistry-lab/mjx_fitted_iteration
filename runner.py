@@ -49,8 +49,8 @@ if __name__ == '__main__':
                 # time_init = time.time()
                 x, u = sim(x_inits, mx, ctx)
                 target  = f_target(x,u, ctx)
-                # ctx.cbs.net, opt_state, loss_value = make_step(optim, ctx.cbs.net,opt_state, loss_fn,x, target)
-                # wandb.log({"loss": loss_value, "net": ctx.cbs.net})
+                ctx.cbs.net, opt_state, loss_value = make_step(optim, ctx.cbs.net,opt_state, loss_fn,x, target)
+                wandb.log({"loss": loss_value, "net": ctx.cbs.net})
                 # print(f"Time taken: {time.time() - time_init}")
 
                 if e % ctx.cfg.vis == 0 and e > 0:

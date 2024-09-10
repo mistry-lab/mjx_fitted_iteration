@@ -23,12 +23,13 @@ class ValueFunc(eqx.Module):
         self.act = jax.nn.softplus
 
     def __call__(self, x):
-        # for layer in self.layers[:-1]:
-        #     x = self.act(layer(x))
-        # return self.layers[-1](x)
-        f = lambda x: jnp.einsum('...i,ij,...j->...', x, jnp.array([[1.3, 1],[1,1.3]]), x)
-        v = f(x)
-        return v
+        for layer in self.layers[:-1]:
+            x = self.act(layer(x))
+        return self.layers[-1](x)
+        # PD controller
+        # f = lambda x: jnp.einsum('...i,ij,...j->...', x, jnp.array([[1.3, 1],[1,1.3]]), x)
+        # v = f(x)
+        # return v
 
 ctx = Context(cfg=Config(
     model_path=os.path.join(base_path, 'doubleintegrator.xml'),
