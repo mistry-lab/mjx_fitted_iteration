@@ -11,6 +11,7 @@ optax = "*"
 pyaml = "*"
 wandb = "*"
 ipython = "*"
+flax = "*"
 
 [dev-packages]
 
