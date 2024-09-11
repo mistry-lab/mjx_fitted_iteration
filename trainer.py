@@ -1,8 +1,6 @@
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from wandb.wandb_torch import torch
-
 from config.cps import Context
 
 def gen_targets_mapped(x, u, ctx:Context):
@@ -28,7 +26,7 @@ def get_traj_cost(x, u, ctx:Context):
 
 def make_step(optim, model, state, loss, x, y, times):
     params, static = eqx.partition(model, eqx.is_array)
-    loss_value, grads = jax.value_and_grad(loss)(params, static, x, y)
+    loss_value, grads = jax.value_and_grad(loss)(params, static, x, y, times)
     updates, state = optim.update(grads, state, model)
     model = eqx.apply_updates(model, updates)
     return model, state, loss_value
