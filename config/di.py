@@ -45,7 +45,8 @@ class ValueFunc(eqx.Module):
         # self.layers2 = [eqx.nn.Linear(in_features=2, out_features=2, key=key1)]
         
 
-    def __call__(self, x):
+    def __call__(self, x, t):
+        x = jnp.concatenate([x, t], axis=-1)
         # transformed_x = self.layers2[0](x)
         # jax.debug.print(transformed_x)
         # return transformed_x @ x
@@ -94,7 +95,7 @@ ctx = Context(cfg=Config(
     vis=10,
     dt=0.01,
     R=jnp.array([[0.001]]),
-    horizon=jnp.arange(0, 100 + 0.01, 0.01)
+    horizon=jnp.arange(0, 100 + 0.01, 0.01) + 0.01
     ),cbs=Callbacks(
         run_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([25, 0.25])), x),
         terminal_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([25, 0.25])), x),
@@ -104,7 +105,7 @@ ctx = Context(cfg=Config(
             jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1)
         ], axis=1).squeeze(),
     state_encoder=lambda x: x,
-    net=ValueFunc([2, 64, 64, 1], jax.random.PRNGKey(0))
+    net=ValueFunc([3, 64, 64, 1], jax.random.PRNGKey(0))
     # net=ValueFunc([2, 2, 1], jax.random.PRNGKey(0))
     )
 )

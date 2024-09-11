@@ -25,12 +25,8 @@ x, u = sim(x_inits, mx, di_ctx)
 target, costs = f_tagert(x, u, di_ctx)
 # plot the targets as a meshgrid with their associated states the first target is associated with the first state
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-v = target[:, 0, ...].reshape(100, 100)
+v = costs.reshape(100, 100)
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
 ax.plot_surface(xv, yv, v, cmap='viridis')
 plt.show()
-
-
-

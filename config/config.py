@@ -22,34 +22,33 @@ class Config:
     R: jnp.ndarray
     horizon: jnp.ndarray
 
-# class Callbacks(NamedTuple):
-#     run_cost: Callable[[jnp.ndarray], jnp.ndarray]
-#     terminal_cost: Callable[[jnp.ndarray], jnp.ndarray]
-#     control_cost: Callable[[jnp.ndarray], jnp.ndarray]
-#     init_gen: Callable[[int, jnp.ndarray], jnp.ndarray]
-#     state_encoder: Callable[[jnp.ndarray], jnp.ndarray]
-#     net: Callable[[jnp.ndarray], jnp.ndarray]
 
-# Callbacks class with mutable `net`
 class Callbacks:
-    def __init__(self, 
-                 run_cost: Callable[[jnp.ndarray], jnp.ndarray],
-                 terminal_cost: Callable[[jnp.ndarray], jnp.ndarray],
-                 control_cost: Callable[[jnp.ndarray], jnp.ndarray],
-                 init_gen: Callable[[int, jnp.ndarray], jnp.ndarray],
-                 state_encoder: Callable[[jnp.ndarray], jnp.ndarray],
-                 net: eqx.Module):
+    def __init__(
+            self,
+            run_cost: Callable[[jnp.ndarray], jnp.ndarray],
+            terminal_cost: Callable[[jnp.ndarray], jnp.ndarray],
+            control_cost: Callable[[jnp.ndarray], jnp.ndarray],
+            init_gen: Callable[[int, jnp.ndarray], jnp.ndarray],
+            state_encoder: Callable[[jnp.ndarray], jnp.ndarray],
+            net: eqx.Module
+    ):
         self.run_cost = run_cost
         self.terminal_cost = terminal_cost
         self.control_cost = control_cost
         self.init_gen = init_gen
         self.state_encoder = state_encoder
-        self.net = net  # `net` is mutable because it's an Equinox module
+        self.net = net
 
-# Context class to hold Config and Callbacks
 class Context:
     def __init__(self, cfg: Config, cbs: Callbacks):
-        self.cfg = cfg  # Immutable Config
-        self.cbs = cbs  # Callbacks with a mutable `net`
+        self.cfg = cfg
+        self.cbs = cbs
 
-# Context = NamedTuple('Context', [('cfg', Config), ('cbs', Callbacks)])
+        assert self.cfg.horizon[0] > 0, (
+            "First time step should be above 0 as mj_step should be called to init data (this increments time)."
+        )
+        assert jnp.all(jnp.linalg.eigh(self.cfg.R)[0] > 0), (
+            "R should be positive definite."
+        )
+

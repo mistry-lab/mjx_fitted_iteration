@@ -12,7 +12,7 @@ def controlled_simulate(x_inits, mx, ctx):
 
     def get_ctrl(mx, dx, R):
         x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
-        t = dx.time
+        t = jnp.expand_dims(dx.time, axis=0)
         act_id = mx.actuator_trnid[:, 0]
         M = mjx.full_m(mx, dx)
         invM = jnp.linalg.inv(M)
