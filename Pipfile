@@ -13,6 +13,7 @@ wandb = "*"
 ipython = "*"
 flax = "*"
 matplotlib = "*"
+nnx = "*"
 
 [dev-packages]
 
