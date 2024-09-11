@@ -26,7 +26,7 @@ def get_traj_cost(x, u, ctx:Context):
     cost = jnp.concatenate([xcst, tcst]) + ucost
     return cost
 
-def make_step(optim, model, state, loss, x, y, t):
+def make_step(optim, model, state, loss, x, y, times):
     params, static = eqx.partition(model, eqx.is_array)
     loss_value, grads = jax.value_and_grad(loss)(params, static, x, y)
     updates, state = optim.update(grads, state, model)
@@ -39,16 +39,17 @@ def loss_fn_tagret(params, static, x, y):
     y = y.reshape(-1, 1)
     return jnp.mean(jnp.square(pred - y))
 
-def loss_fn_td(params, static, x, cost, time):
+def loss_fn_td(params, static, x, cost, times):
     model = eqx.combine(params, static)
-    B, T, nx = x.shape
-    cost_run = cost[..., 0:-1, :].reshape(-1, 1)
-    cost_term = cost[..., -1, :].reshape(-1, 1)
-    x0 = x[..., 0:-1, ...].reshape(-1, x.shape[-1])
-    x1 = x[..., 1:, ...].reshape(-1, x.shape[-1])
-    time = jnp.repeat(time.reshape(-1, 1), x0.shape[0], axis=0).T.reshape(-1, 1)
-    t0, t1 = time[..., 0:-1], time[..., 1:]
-    v0, v1 = model(x0, t0), model(x1, t1)
-    diff = v0 - v1
-    v_term = v1.rehsape(B, T, -1)[..., -1, :].rehspae(-1, 1)
-    return jnp.mean(jnp.square(diff - cost_run) + torch.square(v_term - cost_term))
+    def value_diff(x, t, cost):
+        map_model = jax.vmap(model, in_axes=(0, 0))
+        x0, x1 = x[0:-1], x[1:]
+        t0, t1 = t[0:-1], t[1:]
+        cost_run = cost[0:-1]
+        cost_term = cost[-1]
+        v0, v1 = map_model(x0, t0), map_model(x1, t1)
+        return v0 - v1 - cost_run, v1 - cost_term
+
+    x, times, cost = x.reshape(-1, x.shape[-1]), times.reshape(-1, 1), cost.reshape(-1, 1)
+    diff, term = jax.vmap(value_diff, in_axes=(0, 0, 0))(x, times, cost)
+    return jnp.mean(jnp.square(diff) + jnp.square(term))

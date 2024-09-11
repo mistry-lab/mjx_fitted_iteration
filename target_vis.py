@@ -33,10 +33,4 @@ ax.plot_surface(xv, yv, v, cmap='viridis')
 plt.show()
 
 
-# genrate a batch of sin targets
-key, subkey = jax.random.split(key)
-x = jnp.linspace(-1, 1, 100)
-xv, yv = jnp.meshgrid(x, x)
-x_inits = jnp.stack([xv.ravel(), yv.ravel()], axis=1)
-target = jnp.sin(x_inits[:, 0] + x_inits[:, 1])
 
