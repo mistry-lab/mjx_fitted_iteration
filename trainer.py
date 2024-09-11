@@ -9,7 +9,7 @@ def gen_targets_mapped(x, u, ctx:Context):
     ucost = ctx.cbs.control_cost(u) * ctx.cfg.dt
     xcst = ctx.cbs.run_cost(xs) * ctx.cfg.dt
     tcst = ctx.cbs.terminal_cost(xt)
-    xcost = jnp.concatenate([xcst, tcst]) + ucost*0.
+    xcost = jnp.concatenate([xcst, tcst]) + ucost
     costs = jnp.flip(xcost)
     targets = jnp.flip(jnp.cumsum(costs))
     cost = targets[0]
