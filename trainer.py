@@ -1,6 +1,8 @@
 import jax
 import jax.numpy as jnp
 import equinox as eqx
+from wandb.wandb_torch import torch
+
 from config.cps import Context
 
 def gen_targets_mapped(x, u, ctx:Context):
@@ -21,8 +23,7 @@ def get_traj_cost(x, u, ctx:Context):
     ucost = ctx.cbs.control_cost(u) * ctx.cfg.dt
     xcst = ctx.cbs.run_cost(xs) * ctx.cfg.dt
     tcst = ctx.cbs.terminal_cost(xt)
-    xcost = jnp.concatenate([xcst, tcst]) + ucost
-    cost = jnp.sum(xcost)
+    cost = jnp.concatenate([xcst, tcst]) + ucost
     return cost
 
 def make_step(optim, model, state, loss, x, y, t):
@@ -38,12 +39,16 @@ def loss_fn_tagret(params, static, x, y):
     y = y.reshape(-1, 1)
     return jnp.mean(jnp.square(pred - y))
 
-def loss_fn_td(params, static, x, y, t):
+def loss_fn_td(params, static, x, cost, time):
     model = eqx.combine(params, static)
+    B, T, nx = x.shape
+    cost_run = cost[..., 0:-1, :].reshape(-1, 1)
+    cost_term = cost[..., -1, :].reshape(-1, 1)
     x0 = x[..., 0:-1, ...].reshape(-1, x.shape[-1])
     x1 = x[..., 1:, ...].reshape(-1, x.shape[-1])
-    t = jnp.repeat(t.reshape(-1, 1), x0.shape[0], axis=0).T.reshape(-1, 1)
-    t0, t1 = t[..., 0:-1], t[..., 1:]
+    time = jnp.repeat(time.reshape(-1, 1), x0.shape[0], axis=0).T.reshape(-1, 1)
+    t0, t1 = time[..., 0:-1], time[..., 1:]
     v0, v1 = model(x0, t0), model(x1, t1)
     diff = v0 - v1
-    return jnp.mean(jnp.square(diff - y))
+    v_term = v1.rehsape(B, T, -1)[..., -1, :].rehspae(-1, 1)
+    return jnp.mean(jnp.square(diff - cost_run) + torch.square(v_term - cost_term))
