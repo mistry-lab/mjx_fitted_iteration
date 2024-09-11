@@ -1,23 +1,23 @@
 import argparse
-import time
 import mujoco
 from mujoco import mjx
-import jax
 import wandb
 from config.cps import ctx as cp_ctx
 from config.di import ctx as di_ctx
 from simulate import controlled_simulate
-from trainer import gen_targets_mapped, make_step, loss_fn
+from trainer import gen_targets_mapped, make_step, loss_fn_tagret
 import equinox as eqx
 import optax
-import copy
 import numpy as np
 import jax.numpy as jnp
 from utils.mj_vis import animate_trajectory
 import jax.debug
 
 wandb.init(project="fvi", anonymous="allow", mode='online')
-configs = {"cartpole_swing_up": cp_ctx, "double_integrator":di_ctx }
+configs = {
+    "cartpole_swing_up": cp_ctx,
+    "double_integrator":di_ctx
+}
 
 
 if __name__ == '__main__':
@@ -42,8 +42,7 @@ if __name__ == '__main__':
             data = mujoco.MjData(model)
             mx = mjx.put_model(model)
             sim = eqx.filter_jit(jax.vmap(controlled_simulate, in_axes=(0, None, None)))
-            # sim = jax.vmap(controlled_simulate, in_axes=(0, None, None))
-            f_target = eqx.filter_jit(jax.vmap(gen_targets_mapped, in_axes=(0,0,None)))
+            f_target = eqx.filter_jit(jax.vmap(gen_targets_mapped, in_axes=(0, 0, None)))
             f_make_step = eqx.filter_jit(make_step)
             for e in range(1):
                 key, xkey, tkey = jax.random.split(key, num = 3)
@@ -53,15 +52,8 @@ if __name__ == '__main__':
                 target, costs  = f_target(x,u, ctx)
 
                 for k in range(1000):
-                    ctx.cbs.net, opt_state, loss_value = make_step(optim, ctx.cbs.net,opt_state, loss_fn,x, target)
+                    ctx.cbs.net, opt_state, loss_value = make_step(optim, ctx.cbs.net,opt_state, loss_fn_tagret, x, target)
                     wandb.log({"loss": loss_value, "cost": jnp.mean(costs)})
-                # jax.debug.breakpoint()
-                # print(f"Time taken: {time.time() - time_init}")
-                # jax.debug.print(ctx.cbs.net.layers)
-                print("\n\n-----------")
-                for layer in ctx.cbs.net.layers:
-                    print("weight : ", layer.weight)
-                    print("bias : ", layer.bias)
 
                 if e % ctx.cfg.vis == 0 :
                     xs = x[jax.random.randint(tkey, (5,), 0, ctx.cfg.nsteps)]
@@ -70,6 +62,22 @@ if __name__ == '__main__':
                     x = np.array(xs.squeeze())
                     print()
                     animate_trajectory(x, data, model)
+
+                    # plot the network over discrete states as meshgrid
+                    x = np.linspace(-1, 1, 100)
+                    y = np.linspace(-.5, .5, 100)
+                    xx, yy = np.meshgrid(x, y)
+                    z = np.zeros_like(xx)
+                    for i in range(100):
+                        for j in range(100):
+                            z[i, j] = ctx.cbs.net(jnp.array([xx[i, j], yy[i, j]])).item()
+
+                    # plot using matplotlib
+                    import matplotlib.pyplot as plt
+                    fig = plt.figure()
+                    ax = fig.add_subplot(111, projection='3d')
+                    ax.plot_surface(xx, yy, z, cmap='viridis')
+                    plt.show()
 
     except KeyboardInterrupt:
         print("Exit wandb")

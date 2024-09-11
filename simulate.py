@@ -12,16 +12,14 @@ def controlled_simulate(x_inits, mx, ctx):
 
     def get_ctrl(mx, dx, R):
         x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
+        t = dx.time
         act_id = mx.actuator_trnid[:, 0]
         M = mjx.full_m(mx, dx)
         invM = jnp.linalg.inv(M)
-        dvdx = jax.jacrev(vf)(x) 
+        dvdx = jax.jacrev(vf,0)(x, t)
         G = jnp.vstack([jnp.zeros_like(invM), invM])
         invR = jnp.linalg.inv(R)
-        # print(f"dvdx.T{dvdx.T[0]}")
         u = (-1/2 * invR @ G.T[act_id, :] @ dvdx.T).squeeze()
-        # u = (-1/2 * dvdx.T).squeeze()
-        # u = jnp.ones_like(u) * 10
         ctrl = dx.ctrl.at[:].set(u)
         dx = dx.replace(ctrl=ctrl)
         return dx

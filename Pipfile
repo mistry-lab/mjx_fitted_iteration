@@ -12,6 +12,7 @@ pyaml = "*"
 wandb = "*"
 ipython = "*"
 flax = "*"
+matplotlib = "*"
 
 [dev-packages]
 

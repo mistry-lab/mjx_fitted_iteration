@@ -93,7 +93,8 @@ ctx = Context(cfg=Config(
     batch=100,
     vis=10,
     dt=0.01,
-    R=jnp.array([[0.001]])
+    R=jnp.array([[0.001]]),
+    horizon=jnp.arange(0, 100 + 0.01, 0.01)
     ),cbs=Callbacks(
         run_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([25, 0.25])), x),
         terminal_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([25, 0.25])), x),
@@ -107,3 +108,4 @@ ctx = Context(cfg=Config(
     # net=ValueFunc([2, 2, 1], jax.random.PRNGKey(0))
     )
 )
+

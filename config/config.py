@@ -6,7 +6,7 @@ import jax.tree_util
 import equinox as eqx
 
 @partial(jax.tree_util.register_dataclass,
-         data_fields=['R'],
+         data_fields=['R', 'horizon'],
          meta_fields=['model_path', 'dims', 'lr', 'seed', 'nsteps', 'epochs', 'batch', 'vis', 'dt'])
 @dataclass(frozen=True)
 class Config:
@@ -20,6 +20,7 @@ class Config:
     vis: int
     dt: float
     R: jnp.ndarray
+    horizon: jnp.ndarray
 
 # class Callbacks(NamedTuple):
 #     run_cost: Callable[[jnp.ndarray], jnp.ndarray]
