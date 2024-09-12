@@ -5,13 +5,14 @@ import wandb
 from config.cps import ctx as cp_ctx
 from config.di import ctx as di_ctx
 from simulate import controlled_simulate
-from trainer import gen_targets_mapped, make_step, loss_fn_tagret
+# from trainer import gen_targets_mapped, make_step, loss_fn_tagret
 import equinox as eqx
 import optax
 import numpy as np
 import jax.numpy as jnp
 from utils.mj_vis import animate_trajectory
 import jax.debug
+from trainer import gen_targets_mapped, make_step, loss_fn_td, loss_fn_target, gen_traj_cost
 
 wandb.init(project="fvi", anonymous="allow", mode='online')
 configs = {
@@ -41,19 +42,21 @@ if __name__ == '__main__':
             model.opt.timestep = ctx.cfg.dt # Setting timestep from Context
             data = mujoco.MjData(model)
             mx = mjx.put_model(model)
+            times = jnp.repeat(di_ctx.cfg.horizon.reshape(1,di_ctx.cfg.horizon.shape[-1]), 10000, axis=0) 
+
             sim = eqx.filter_jit(jax.vmap(controlled_simulate, in_axes=(0, None, None)))
             f_target = eqx.filter_jit(jax.vmap(gen_targets_mapped, in_axes=(0, 0, None)))
             f_make_step = eqx.filter_jit(make_step)
-            for e in range(1):
+            for e in range(100):
                 key, xkey, tkey = jax.random.split(key, num = 3)
                 x_inits = ctx.cbs.init_gen(ctx.cfg.batch, xkey)
                 # time_init = time.time()
                 x, u = sim(x_inits, mx, ctx)
-                target, costs  = f_target(x,u, ctx)
+                target, total_cost, terminal_cost =  f_target(x,u, ctx)
 
-                for k in range(1000):
-                    ctx.cbs.net, opt_state, loss_value = make_step(optim, ctx.cbs.net,opt_state, loss_fn_tagret, x, target)
-                    wandb.log({"loss": loss_value, "cost": jnp.mean(costs)})
+                for k in range(5):
+                    di_ctx.cbs.net, opt_state, loss_value = make_step(optim, di_ctx.cbs.net,opt_state, loss_fn_td, x, times, target)
+                    wandb.log({"loss": loss_value, "cost": jnp.mean(loss_value)})
 
                 if e % ctx.cfg.vis == 0 :
                     xs = x[jax.random.randint(tkey, (5,), 0, ctx.cfg.nsteps)]
