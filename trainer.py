@@ -1,6 +1,8 @@
 import jax
 import jax.numpy as jnp
 import equinox as eqx
+from jax.experimental.array_api import reshape
+
 from config.cps import Context
 
 def gen_targets_mapped(x, u, ctx:Context):
@@ -41,21 +43,20 @@ def loss_fn_target(params, static, x, times, y):
     y = y.reshape(-1, 1)
     return jnp.mean(jnp.square(pred - y))
 
-def loss_fn_td(params, static, x, times, y):
+def loss_fn_td(params, static, x, times, cost):
     model = eqx.combine(params, static)
-    cost = y 
-    def value_diff(x, t, cost):
-        # map_model = jax.vmap(model, in_axes=(0, 0))
-        # x0, x1 = x[0:-1], x[1:]
-        # t0, t1 = t[0:-1], t[1:]
-        cost_run = cost[0:-1]
-        cost_term = cost[-1]
-        v = model(x,t)
-        v0 = v[0:-1]
-        v1 = v[1:]
-        # v0, v1 = map_model(x0, t0), map_model(x1, t1)
-        return v0 - v1 - cost_run, v[-1] - cost_term
+    B, T, nx = x.shape
 
-    x, times, cost = x.reshape(-1, x.shape[-1]), times.reshape(-1, 1), cost.reshape(-1, 1)
-    diff, term = jax.vmap(value_diff, in_axes=(0, 0, 0))(x, times, cost)
-    return jnp.mean(jnp.square(diff) + jnp.square(term))
+    def v_diff(x, t):
+        v_seq = jax.vmap(model)(x, t)
+        v0, v1 = v_seq[0:-1], v_seq[1:]
+        return v0 - v1, v_seq[-1]
+
+    def v_r_cost(v_diff, v_term, cost):
+        v_diff_cost = v_diff - cost[:-1]
+        v_term_cost = v_term - cost[-1]
+        return jnp.sum(jnp.square(v_diff_cost) + jnp.square(v_term_cost))
+
+    v_diff, v_term = jax.vmap(v_diff)(x, times)
+    cost = jax.vmap(v_r_cost)(v_diff.reshape(B, T-1), v_term.reshape(B, 1), cost)
+    return jnp.mean(cost)

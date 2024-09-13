@@ -90,9 +90,6 @@ plt.show()
 
 # # plot the targets as a meshgrid with their associated states the first target is associated with the first state
 
-
-
-
 # fig = plt.figure("Value at t=N, terminal cost")
 # vv = terminal_cost.reshape(100, 100)
 # ax = fig.add_subplot(111, projection='3d')

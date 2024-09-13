@@ -30,6 +30,7 @@ class ValueFunc(eqx.Module):
         # self.layers[0] = eqx.tree_at(where, self.layers[0], new_weight)        
 
     def __call__(self, x, t):
+        t = t if t.ndim == 1 else t.reshape(1)
         x = jnp.concatenate([x, t], axis=-1)
         # transformed_x = self.layers2[0](x)
         # return transformed_x @ x
