@@ -9,17 +9,17 @@ def gen_targets_mapped(x, u, ctx:Context):
     xs, xt = x[:-1], x[-1]
     xt = xt if len(xt.shape) == 2 else xt.reshape(1, xt.shape[-1])
     ucost = ctx.cbs.control_cost(u) * ctx.cfg.dt
-    xcst = ctx.cbs.run_cost(xs) * 0.01
+    xcst = ctx.cbs.run_cost(xs) * ctx.cfg.dt
     tcst = ctx.cbs.terminal_cost(xt)
     xcost = jnp.concatenate([xcst, tcst])
-    # xcost = jnp.concatenate([xcst, tcst]) + ucost * ctx.cfg.dt
+    xcost = jnp.concatenate([xcst, tcst]) + ucost
     costs = jnp.flip(xcost)
     terminal_cost = costs[0]
 
     targets = jnp.flip(jnp.cumsum(costs))
     total_cost = targets[0]    
     
-    return targets, total_cost, terminal_cost
+    return targets, total_cost, tcst
 
 def gen_traj_cost(x, u, ctx:Context):
     xs, xt = x[:-1], x[-1]
@@ -40,8 +40,9 @@ def make_step(optim, model, state, loss, x, times, y):
 def loss_fn_target(params, static, x, times, y):
     model = eqx.combine(params, static)
     pred = jax.vmap(model)(x.reshape(-1, x.shape[-1]), times.reshape(-1,1))
-    y = y.reshape(-1, 1)
-    return jnp.mean(jnp.square(pred - y))
+    pred = pred.reshape(y.shape)
+    loss = jnp.sum(jnp.square(pred - y), axis=-1)
+    return jnp.mean(loss)
 
 def loss_fn_td(params, static, x, times, cost):
     model = eqx.combine(params, static)

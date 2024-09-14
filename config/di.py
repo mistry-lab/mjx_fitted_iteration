@@ -77,8 +77,8 @@ ctx = Context(cfg=Config(
     R=jnp.array([[0.1]]),
     horizon=jnp.arange(0, 1, 0.01) + 0.01
     ),cbs=Callbacks(
-        run_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([1., 1.])), x),
-        terminal_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([1, 1.])), x),
+        run_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([1., 0.01])), x),
+        terminal_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([1, 0.01])), x),
         control_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.array([[0.1]]), x).at[..., -1].set(0),
         init_gen= lambda batch, key: jnp.concatenate([
             jax.random.uniform(key, (batch, 1), minval=-1., maxval=1.),

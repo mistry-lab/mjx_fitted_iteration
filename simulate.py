@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 from mujoco import mjx
 
-def controlled_simulate(x_inits, mx, ctx):
+def controlled_simulate(x_inits, mx, ctx, PD=False):
     def set_init(x):
         dx = mjx.make_data(mx)
         qpos = dx.qpos.at[:].set(x[:mx.nq])
@@ -20,6 +20,11 @@ def controlled_simulate(x_inits, mx, ctx):
         G = jnp.vstack([jnp.zeros_like(invM), invM])
         invR = jnp.linalg.inv(R)
         u = (-1/2 * invR @ G.T[act_id, :] @ dvdx.T).squeeze()
+
+        # PD Controller
+        if PD:
+            u = -1.3*dx.qpos -1.*dx.qvel 
+
         ctrl = dx.ctrl.at[:].set(u)
         dx = dx.replace(ctrl=ctrl)
         return dx
