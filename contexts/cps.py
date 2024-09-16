@@ -31,7 +31,7 @@ class ValueFunc(eqx.Module):
 ctx = Context(cfg=Config(
     model_path=os.path.join(base_path, 'cartpole.xml'),
     dims=[4, 64, 64, 1],
-    lr=1e-3,
+    lr=4e-3,
     seed=0,
     nsteps=100,
     epochs=400,
