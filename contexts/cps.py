@@ -1,7 +1,7 @@
 import jax
 from jax import numpy as jnp
 import equinox as eqx
-from .config import Config, Callbacks, Context
+from .meta_context import Config, Callbacks, Context
 import os
 
 try:
@@ -34,7 +34,7 @@ ctx = Context(cfg=Config(
     lr=1e-3,
     seed=0,
     nsteps=100,
-    epochs=100,
+    epochs=400,
     batch=1000,
     vis=10,
     dt=0.01,
@@ -51,6 +51,6 @@ ctx = Context(cfg=Config(
             jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1)
         ], axis=1).squeeze(),
     state_encoder=lambda x: x,
-    net=ValueFunc([5, 64, 64, 1], jax.random.PRNGKey(0))
+    gen_network=lambda :ValueFunc([5, 64, 64, 1], jax.random.PRNGKey(0))
     )
 )

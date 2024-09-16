@@ -2,36 +2,27 @@ import argparse
 import mujoco
 from mujoco import mjx
 import wandb
-from config.cps import ctx as cp_ctx
-from config.di import ctx as di_ctx
+from contexts.contexts import ctxs
 from simulate import controlled_simulate
-# from trainer import gen_targets_mapped, make_step, loss_fn_tagret
 import equinox as eqx
 import optax
+from utils.tqdm import trange
 import numpy as np
 import jax.numpy as jnp
 from utils.mj_vis import animate_trajectory
 import jax.debug
-from trainer import gen_targets_mapped, make_step, loss_fn_td, loss_fn_target, gen_traj_cost
+from trainer import gen_traj_targets, make_step, loss_fn_td, loss_fn_target, gen_traj_cost
 
 wandb.init(project="fvi", anonymous="allow", mode='online')
-configs = {
-    "cartpole_swing_up": cp_ctx,
-    "double_integrator":di_ctx
-}
 
 
 if __name__ == '__main__':
     try:
         parser = argparse.ArgumentParser()
-        parser.add_argument("--task", help="task name", default="cartpole_swing_up")
+        parser.add_argument("--task", help="task name", default="double_integrator")
+        parser.add_argument("--loss_type", help="loss type", default="td")
         args = parser.parse_args()
-        ctx = configs[args.task]
-
-        # Optimiser
-        optim = optax.adamw(ctx.cfg.lr)
-        opt_state = optim.init(eqx.filter(ctx.cbs.net, eqx.is_array))
-
+        ctx = ctxs[args.task]
         # Random number generator
         init_key = jax.random.PRNGKey(ctx.cfg.seed)
         key, subkey = jax.random.split(init_key)
@@ -42,45 +33,28 @@ if __name__ == '__main__':
             model.opt.timestep = ctx.cfg.dt # Setting timestep from Context
             data = mujoco.MjData(model)
             mx = mjx.put_model(model)
-            times = jnp.repeat(di_ctx.cfg.horizon.reshape(1,di_ctx.cfg.horizon.shape[-1]), 10000, axis=0) 
+            net = ctx.cbs.gen_network()
+            optim = optax.adamw(ctx.cfg.lr)
+            opt_state = optim.init(eqx.filter(net, eqx.is_array))
+            times = jnp.repeat(ctx.cfg.horizon.reshape(1,ctx.cfg.horizon.shape[-1]), ctx.cfg.batch, axis=0)
+            sim = eqx.filter_jit(jax.vmap(controlled_simulate, in_axes=(0, None, None, None, None)))
+            truths = gen_traj_cost if args.loss_type == "td" else gen_traj_targets
+            loss = loss_fn_td if args.loss_type == "td" else loss_fn_target
+            truths = eqx.filter_jit(jax.vmap(truths, in_axes=(0, 0, None)))
 
-            sim = eqx.filter_jit(jax.vmap(controlled_simulate, in_axes=(0, None, None)))
-            f_target = eqx.filter_jit(jax.vmap(gen_targets_mapped, in_axes=(0, 0, None)))
-            f_make_step = eqx.filter_jit(make_step)
-            for e in range(100):
+            for e in trange(ctx.cfg.epochs):
                 key, xkey, tkey = jax.random.split(key, num = 3)
                 x_inits = ctx.cbs.init_gen(ctx.cfg.batch, xkey)
-                # time_init = time.time()
-                x, u = sim(x_inits, mx, ctx)
-                target, total_cost, terminal_cost =  f_target(x,u, ctx)
+                x, u = sim(x_inits, mx, ctx, net, PD=False)
+                td_res = truths(x, u, ctx)
+                net, opt_state, loss_value = make_step(optim, net, opt_state, loss, x, times, td_res[0])
+                wandb.log({"loss": loss_value, "cost": jnp.mean(td_res[1])})
+                print(f"Epoch {e}, Loss: {loss_value.item()}")
 
-                for k in range(5):
-                    di_ctx.cbs.net, opt_state, loss_value = make_step(optim, di_ctx.cbs.net,opt_state, loss_fn_td, x, times, target)
-                    wandb.log({"loss": loss_value, "cost": jnp.mean(loss_value)})
-
-                if e % ctx.cfg.vis == 0 :
+                if e % ctx.cfg.vis == 0 or e == ctx.cfg.epochs - 1:
                     xs = x[jax.random.randint(tkey, (5,), 0, ctx.cfg.nsteps)]
-                    term_cst = ctx.cbs.terminal_cost(xs[...,-1,:])
-                    print(f"Terminal cost is: {term_cst}")
                     x = np.array(xs.squeeze())
-                    print()
                     animate_trajectory(x, data, model)
-
-                    # plot the network over discrete states as meshgrid
-                    x = np.linspace(-1, 1, 100)
-                    y = np.linspace(-.5, .5, 100)
-                    xx, yy = np.meshgrid(x, y)
-                    z = np.zeros_like(xx)
-                    for i in range(100):
-                        for j in range(100):
-                            z[i, j] = ctx.cbs.net(jnp.array([xx[i, j], yy[i, j]])).item()
-
-                    # plot using matplotlib
-                    import matplotlib.pyplot as plt
-                    fig = plt.figure()
-                    ax = fig.add_subplot(111, projection='3d')
-                    ax.plot_surface(xx, yy, z, cmap='viridis')
-                    plt.show()
 
     except KeyboardInterrupt:
         print("Exit wandb")

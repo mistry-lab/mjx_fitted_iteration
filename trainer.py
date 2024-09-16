@@ -1,21 +1,16 @@
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from jax.experimental.array_api import reshape
+from contexts.cps import Context
 
-from config.cps import Context
-
-def gen_targets_mapped(x, u, ctx:Context):
+def gen_traj_targets(x, u, ctx:Context):
     xs, xt = x[:-1], x[-1]
     xt = xt if len(xt.shape) == 2 else xt.reshape(1, xt.shape[-1])
     ucost = ctx.cbs.control_cost(u) * ctx.cfg.dt
     xcst = ctx.cbs.run_cost(xs) * ctx.cfg.dt
     tcst = ctx.cbs.terminal_cost(xt)
-    xcost = jnp.concatenate([xcst, tcst])
     xcost = jnp.concatenate([xcst, tcst]) + ucost
     costs = jnp.flip(xcost)
-    terminal_cost = costs[0]
-
     targets = jnp.flip(jnp.cumsum(costs))
     total_cost = targets[0]    
     
@@ -28,7 +23,7 @@ def gen_traj_cost(x, u, ctx:Context):
     xcst = ctx.cbs.run_cost(xs) * ctx.cfg.dt
     tcst = ctx.cbs.terminal_cost(xt)
     cost = jnp.concatenate([xcst, tcst]) + ucost
-    return cost, None, tcst
+    return cost, jnp.sum(cost), tcst
 
 def make_step(optim, model, state, loss, x, times, y):
     params, static = eqx.partition(model, eqx.is_array)

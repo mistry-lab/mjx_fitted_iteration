@@ -1,10 +1,10 @@
 from simulate import controlled_simulate
-from config.di import ctx as di_ctx
+from contexts.di import ctx as di_ctx
 import jax
 import jax.numpy as jnp
 import mujoco
 from mujoco import mjx
-from trainer import gen_targets_mapped, make_step, loss_fn_td, loss_fn_target, gen_traj_cost
+from trainer import gen_traj_targets, make_step, loss_fn_td, loss_fn_target, gen_traj_cost
 import equinox as eqx
 import optax
 import matplotlib.pyplot as plt
@@ -38,7 +38,7 @@ mx = mjx.put_model(model)
 di_ctx2 = copy.deepcopy(di_ctx)
 
 sim = eqx.filter_jit(jax.vmap(controlled_simulate, in_axes=(0, None, None, None)))
-f_target = eqx.filter_jit(jax.vmap(gen_targets_mapped, in_axes=(0, 0, None)))
+f_target = eqx.filter_jit(jax.vmap(gen_traj_targets, in_axes=(0, 0, None)))
 f_cost = eqx.filter_jit(jax.vmap(gen_traj_cost, in_axes=(0, 0, None)))
 f_make_step = eqx.filter_jit(make_step)
 

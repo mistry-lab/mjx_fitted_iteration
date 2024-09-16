@@ -1,3 +1,4 @@
+from email.policy import strict
 from typing import Callable, List, NamedTuple
 from dataclasses import dataclass
 from functools import partial
@@ -31,14 +32,15 @@ class Callbacks:
             control_cost: Callable[[jnp.ndarray], jnp.ndarray],
             init_gen: Callable[[int, jnp.ndarray], jnp.ndarray],
             state_encoder: Callable[[jnp.ndarray], jnp.ndarray],
-            net: eqx.Module
+            gen_network: Callable[[None], eqx.Module]
     ):
         self.run_cost = run_cost
         self.terminal_cost = terminal_cost
         self.control_cost = control_cost
         self.init_gen = init_gen
         self.state_encoder = state_encoder
-        self.net = net
+        self.gen_network = gen_network
+
 
 class Context:
     def __init__(self, cfg: Config, cbs: Callbacks):
@@ -51,4 +53,9 @@ class Context:
         assert jnp.all(jnp.linalg.eigh(self.cfg.R)[0] > 0), (
             "R should be positive definite."
         )
-
+        assert self.cfg.horizon[0] == self.cfg.dt, (
+            "First time step should be equal to the timestep."
+        )
+        # assert self.cfg.horizon[-1] == self.cfg.nsteps / self.cfg.dt + self.cfg.dt, (
+        #     "Last time step should be equal to the total time."
+        # )

@@ -1,7 +1,7 @@
 import jax
 from jax import numpy as jnp
 import equinox as eqx
-from .config import Config, Callbacks, Context
+from .meta_context import Config, Callbacks, Context
 import os
 import jax.debug
 
@@ -69,23 +69,23 @@ ctx = Context(cfg=Config(
     dims=[2, 64, 64, 1],
     lr=5e-3,
     seed=0,
-    nsteps=100,
-    epochs=100,
-    batch=100,
-    vis=10,
+    nsteps=200,
+    epochs=400,
+    batch=1000,
+    vis=50,
     dt=0.01,
-    R=jnp.array([[0.1]]),
-    horizon=jnp.arange(0, 1, 0.01) + 0.01
+    R=jnp.array([[1.]]),
+    horizon=jnp.arange(0, 2, 0.01) + 0.01
     ),cbs=Callbacks(
-        run_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([1., 0.01])), x),
-        terminal_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([1, 0.01])), x),
-        control_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.array([[0.1]]), x).at[..., -1].set(0),
+        run_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([0.1, 0.1])), x),
+        terminal_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([1., 1.])), x),
+        control_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.array([[1.]]), x).at[..., -1].set(0),
         init_gen= lambda batch, key: jnp.concatenate([
-            jax.random.uniform(key, (batch, 1), minval=-1., maxval=1.),
+            jax.random.uniform(key, (batch, 1), minval=-2.5, maxval=2.5),
             jax.random.uniform(key, (batch, 1), minval=-0.05, maxval=0.05)
         ], axis=1).squeeze(),
     state_encoder=lambda x: x,
-    net=ValueFunc([3, 64,64, 1], jax.random.PRNGKey(0))
+    gen_network = lambda : ValueFunc([3, 64,64, 1], jax.random.PRNGKey(0))
     )
 )
 
