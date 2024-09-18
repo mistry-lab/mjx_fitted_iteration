@@ -1,29 +1,44 @@
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from contexts.cps import Context
 from simulate import controlled_simulate
 
-@eqx.filter_jit
+# @eqx.filter_jit
 def loss_fn(params, static, x_init, mjmodel, ctx):
     model = eqx.combine(params, static)
-    x,u,costs = controlled_simulate(x_init, mjmodel, ctx, model)
+    _,_,costs = controlled_simulate(x_init, mjmodel, ctx, model)
     costs = jnp.sum(costs, axis=1)
-    jax.debug.print("cost mean : {ct}", ct=jnp.mean(costs))
     return jnp.mean(costs)
 
 @eqx.filter_jit
 def make_step(optim, model, state, loss, x_init, mjmodel, ctx):
     params, static = eqx.partition(model, eqx.is_array)
-    # static = jax.lax.stop_gradient(static)
-
-    # loss_value, grads = eqx.filter_value_and_grad(loss)(model, x, times, y)
     loss_value, grads = jax.value_and_grad(loss)(params, static, x_init, mjmodel, ctx)
-    # loss, grads = loss_and_grad_fn2(params, static, x,horizon )
     updates, state = optim.update(grads, state, model)
     model = eqx.apply_updates(model, updates)
     return model, state, loss_value
 
+
+@eqx.filter_jit
+def loss_fn_td(params, static, x_init, mjmodel, ctx):
+    @jax.vmap
+    def v_diff(x):
+        v_seq = jax.vmap(model)(x, ctx.cfg.horizon)
+        v0, v1 = v_seq[0:-1], v_seq[1:]
+        return v0 - v1, v_seq[-1]
+
+    @jax.vmap
+    def v_r_cost(diff, term, cost):
+        v_diff_cost = diff - cost[:-1]
+        v_term_cost = term - cost[-1]
+        return jnp.sum(jnp.square(v_diff_cost) + jnp.square(v_term_cost))
+    
+    model = eqx.combine(params, static)
+    x,_,costs = controlled_simulate(x_init, mjmodel, ctx, model)
+    B, T, _ = x.shape
+    diff, term = v_diff(x)
+    costs = v_r_cost(diff.reshape(B, T-1), term.reshape(B, 1), costs)
+    return jnp.mean(costs)
 
 # def gen_traj_targets(x, u, ctx:Context):
 #     xs, xt = x[:-1], x[-1]

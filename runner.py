@@ -10,7 +10,7 @@ from utils.tqdm import trange
 import numpy as np
 from utils.mj_vis import animate_trajectory
 import jax.debug
-from trainer import make_step, loss_fn
+from trainer import make_step, loss_fn, loss_fn_td
 
 wandb.init(project="fvi", anonymous="allow", mode='online')
 
@@ -34,11 +34,13 @@ if __name__ == '__main__':
             net = ctx.cbs.gen_network()
             optim = optax.adamw(ctx.cfg.lr)
             opt_state = optim.init(eqx.filter(net, eqx.is_array))
+            key, xkey, tkey = jax.random.split(key, num = 3)
+            x_inits = ctx.cbs.init_gen(ctx.cfg.batch, xkey)
 
             for e in trange(ctx.cfg.epochs):
                 key, xkey, tkey = jax.random.split(key, num = 3)
-                x_inits = ctx.cbs.init_gen(ctx.cfg.batch, xkey)
-                net, opt_state, loss_value = make_step(optim, net, opt_state, loss_fn, x_inits, mx, ctx)
+                for i in range(10):
+                    net, opt_state, loss_value = make_step(optim, net, opt_state, loss_fn_td, x_inits, mx, ctx)
                 wandb.log({"loss": loss_value})
                 print(f"Epoch {e}, Loss: {loss_value.item()}")
 

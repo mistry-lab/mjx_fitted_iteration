@@ -39,11 +39,14 @@ def controlled_simulate(x_inits, mx, ctx, net, PD=False):
     #     dx = dx.replace(ctrl=ctrl)
     #     return dx, cost
 
+    def policy(x,t,nn,cfg,mx,dx):
+        return ctx.cbs.controller(x,t,nn,cfg,mx,dx)
+
     def step(carry, _):
         dx = carry
         x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
         t = jnp.expand_dims(dx.time, axis=0)
-        u = net(x,t) # Policy function
+        u = jax.lax.stop_gradient(policy(x,t,net,ctx.cfg,mx,dx)) # Policy function
         # u = -1.*dx.qpos - 0.05*dx.qvel
         cost = cost_fn(x, u, ctx) # Cost function
 

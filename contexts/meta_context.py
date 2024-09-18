@@ -32,7 +32,8 @@ class Callbacks:
             control_cost: Callable[[jnp.ndarray], jnp.ndarray],
             init_gen: Callable[[int, jnp.ndarray], jnp.ndarray],
             state_encoder: Callable[[jnp.ndarray], jnp.ndarray],
-            gen_network: Callable[[None], eqx.Module]
+            gen_network: Callable[[None], eqx.Module],
+            controller: Callable[[jnp.ndarray, jnp.ndarray,Config, eqx.Module], jnp.ndarray]
     ):
         self.run_cost = run_cost
         self.terminal_cost = terminal_cost
@@ -40,6 +41,7 @@ class Callbacks:
         self.init_gen = init_gen
         self.state_encoder = state_encoder
         self.gen_network = gen_network
+        self.controller = controller
 
 
 class Context:
@@ -47,13 +49,13 @@ class Context:
         self.cfg = cfg
         self.cbs = cbs
 
-        assert self.cfg.horizon[0] > 0, (
+        assert self.cfg.horizon[0] >= 0, (
             "First time step should be above 0 as mj_step should be called to init data (this increments time)."
         )
         assert jnp.all(jnp.linalg.eigh(self.cfg.R)[0] > 0), (
             "R should be positive definite."
         )
-        assert self.cfg.horizon[0] == self.cfg.dt, (
+        assert self.cfg.horizon[1]-self.cfg.horizon[0] == self.cfg.dt, (
             "First time step should be equal to the timestep."
         )
         # assert self.cfg.horizon[-1] == self.cfg.nsteps / self.cfg.dt + self.cfg.dt, (

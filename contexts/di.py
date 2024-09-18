@@ -4,6 +4,7 @@ import equinox as eqx
 from .meta_context import Config, Callbacks, Context
 import os
 import jax.debug
+from mujoco import mjx
 
 try:
     # This works when __file__ is defined (e.g., in regular scripts)
@@ -63,6 +64,19 @@ class ValueFunc(eqx.Module):
         return jnp.mean(jnp.square(pred - y))
 
 
+def policy(x,t,net,cfg, mx, dx):
+    return net(x,t)
+
+def hjb(x,t,net,cfg, mx, dx):
+    act_id = mx.actuator_trnid[:, 0]
+    M = mjx.full_m(mx, dx)
+    invM = jnp.linalg.inv(M)
+    dvdx = jax.jacrev(net,0)(x, t)
+    G = jnp.vstack([jnp.zeros_like(invM), invM])
+    invR = jnp.linalg.inv(cfg.R)
+    u = (-1/2 * invR @ G.T[act_id, :] @ dvdx.T).flatten()
+    return u    
+
 
 ctx = Context(cfg=Config(
     model_path=os.path.join(base_path, 'doubleintegrator.xml'),
@@ -71,11 +85,11 @@ ctx = Context(cfg=Config(
     seed=0,
     nsteps=100,
     epochs=50,
-    batch=20,
+    batch=500,
     vis=50,
     dt=0.01,
     R=jnp.array([[.1]]),
-    horizon=jnp.arange(0, 200*0.01, 0.01) + 0.01
+    horizon=jnp.arange(0, (100 + 1)*0.01, 0.01) + 0.01
     ),cbs=Callbacks(
         # run_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([10., .1])), x),
         # terminal_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([1., .01])), x),
@@ -89,7 +103,8 @@ ctx = Context(cfg=Config(
             jax.random.uniform(key, (batch, 1), minval=-0.7, maxval=0.7)
         ], axis=1).squeeze(),
     state_encoder=lambda x: x,
-    gen_network = lambda : ValueFunc([3, 64, 64, 1], jax.random.PRNGKey(0))
+    gen_network = lambda : ValueFunc([3, 64, 64, 1], jax.random.PRNGKey(0)),
+    controller = hjb
     )
 )
 

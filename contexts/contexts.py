@@ -1,5 +1,5 @@
 import os
-from .cps import ctx as cp_ctx
+# from .cps import ctx as cp_ctx
 from .di import ctx as di_ctx
 
 try:
@@ -10,6 +10,6 @@ except NameError:
     base_path = os.getcwd()
 
 ctxs = {
-    "cartpole_swing_up": cp_ctx,
+    # "cartpole_swing_up": cp_ctx,
     "double_integrator": di_ctx
 }
