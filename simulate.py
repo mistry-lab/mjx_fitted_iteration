@@ -2,12 +2,14 @@ import jax
 import jax.numpy as jnp
 from mujoco import mjx
 from contexts.di import Context
+import equinox as eqx
 
 def cost_fn(x, u, ctx:Context):
     ucost = ctx.cbs.control_cost(u) * ctx.cfg.dt
     xcst = ctx.cbs.run_cost(x) * ctx.cfg.dt
     return jnp.array([xcst + ucost])
 
+@eqx.filter_jit
 def controlled_simulate(x_inits, mx, ctx, net, PD=False):
     def set_init(x):
         dx = mjx.make_data(mx)
@@ -49,43 +51,15 @@ def controlled_simulate(x_inits, mx, ctx, net, PD=False):
         dx = dx.replace(ctrl=ctrl)
         dx = mjx.step(mx, dx) # Dynamics function
         return dx, jnp.concatenate([dx.qpos, dx.qvel, dx.ctrl, cost], axis=0)
+    
+    @jax.vmap
+    def rollout(x_init):
+        dx = set_init(x_init)
+        _, res = jax.lax.scan(step, dx, None, length=ctx.cfg.nsteps)
+        x, u, costs = res[...,:-mx.nu-1], res[...,-mx.nu-1:-1], res[...,-1]
+        x = jnp.concatenate([x_init.reshape(1,-1), x], axis=0)
+        tcost = ctx.cbs.terminal_cost(x[-1]) # Terminal cost
+        costs = jnp.concatenate([costs, tcost.reshape(-1)], axis=0)
+        return x,u,costs
 
-    dx = set_init(x_inits)
-    _, res = jax.lax.scan(step, dx, None, length=ctx.cfg.nsteps)
-    x, u, costs = res[...,:-mx.nu-1], res[...,-mx.nu-1:-1], res[...,-1]
-    u = u.at[-1].set(0.)
-    costs = jnp.sum(costs) + ctx.cbs.terminal_cost(x[-1]) # Sum and add terminal cost
-    # costs = jnp.sum(costs)
-    return costs
-
-
-
-
-def compute_traj(x_inits, mx, ctx, net, PD=False):
-    def set_init(x):
-        dx = mjx.make_data(mx)
-        qpos = dx.qpos.at[:].set(x[:mx.nq])
-        qvel = dx.qvel.at[:].set(x[mx.nq:])
-        dx = dx.replace(qpos=qpos, qvel=qvel)
-        return mjx.step(mx, dx)
-
-    def step(carry, _):
-        dx = carry
-        x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
-        t = jnp.expand_dims(dx.time, axis=0)
-        u = net(x,t) # Policy function
-        # u = -1.*dx.qpos - 0.05*dx.qvel
-        cost = cost_fn(x, u, ctx) # Cost function
-
-        ctrl = dx.ctrl.at[:].set(u)
-        dx = dx.replace(ctrl=ctrl)
-        dx = mjx.step(mx, dx) # Dynamics function
-
-        return dx, jnp.concatenate([dx.qpos, dx.qvel, dx.ctrl, cost], axis=0)
-
-    dx = set_init(x_inits)
-    _, res = jax.lax.scan(step, dx, None, length=ctx.cfg.nsteps)
-    x, u, costs = res[...,:-mx.nu-1], res[...,-mx.nu:-1], res[...,:-1]
-    u = u.at[-1].set(0.)
-    costs = jnp.sum(costs) + ctx.cbs.terminal_cost(x[-1]) # Sum and add terminal cost
-    return x, u
+    return rollout(x_inits)
