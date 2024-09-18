@@ -50,9 +50,9 @@ class Context:
         assert self.cfg.horizon[0] > 0, (
             "First time step should be above 0 as mj_step should be called to init data (this increments time)."
         )
-        assert jnp.all(jnp.linalg.eigh(self.cfg.R)[0] > 0), (
-            "R should be positive definite."
-        )
+        # assert jnp.all(jnp.linalg.eigh(self.cfg.R)[0] > 0), (
+        #     "R should be positive definite."
+        # )
         assert self.cfg.horizon[0] == self.cfg.dt, (
             "First time step should be equal to the timestep."
         )

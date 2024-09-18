@@ -71,18 +71,18 @@ ctx = Context(cfg=Config(
     seed=0,
     nsteps=100,
     epochs=400,
-    batch=20,
+    batch=10,
     vis=50,
     dt=0.01,
-    R=jnp.array([[.5]]),
+    R=jnp.array([[1]]),
     horizon=jnp.arange(0, 1, 0.01) + 0.01
     ),cbs=Callbacks(
-        run_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([.0, .0])), x),
-        terminal_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([1., .01])), x),
-        control_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.array([[.5]]), x).at[..., -1].set(0),
+        run_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([1., 1])), x),
+        terminal_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([1., 1])), x),
+        control_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.array([[1]]), x).at[..., -1].set(0),
         init_gen= lambda batch, key: jnp.concatenate([
             jax.random.uniform(key, (batch, 1), minval=-2.5, maxval=2.5),
-            jax.random.uniform(key, (batch, 1), minval=-0.05, maxval=0.05)
+            jax.random.uniform(key, (batch, 1), minval=-0.0, maxval=0.0)
         ], axis=1).squeeze(),
     state_encoder=lambda x: x,
     gen_network = lambda : ValueFunc([3, 64, 64, 1], jax.random.PRNGKey(0))

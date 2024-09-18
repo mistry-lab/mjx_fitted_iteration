@@ -13,6 +13,7 @@ from utils.mj_vis import animate_trajectory
 import jax.debug
 from trainer import gen_traj_targets, make_step, loss_fn_td, loss_fn_target, gen_traj_cost
 
+
 wandb.init(project="fvi", anonymous="allow", mode='online')
 
 

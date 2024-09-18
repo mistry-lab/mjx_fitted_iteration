@@ -12,8 +12,7 @@ def gen_traj_targets(x, u, ctx:Context):
     xcost = jnp.concatenate([xcst, tcst]) + ucost
     costs = jnp.flip(xcost)
     targets = jnp.flip(jnp.cumsum(costs))
-    total_cost = targets[0]    
-    
+    total_cost = targets[0]
     return targets, total_cost, tcst
 
 def gen_traj_cost(x, u, ctx:Context):
@@ -23,7 +22,7 @@ def gen_traj_cost(x, u, ctx:Context):
     xcst = ctx.cbs.run_cost(xs) * ctx.cfg.dt
     tcst = ctx.cbs.terminal_cost(xt)
     cost = jnp.concatenate([xcst, tcst]) + ucost
-    return cost, jnp.sum(cost), tcst
+    return cost, jnp.sum(ucost), tcst
 
 def make_step(optim, model, state, loss, x, times, y):
     params, static = eqx.partition(model, eqx.is_array)
@@ -42,6 +41,7 @@ def loss_fn_target(params, static, x, times, y):
 def loss_fn_td(params, static, x, times, cost):
     model = eqx.combine(params, static)
     B, T, nx = x.shape
+    return jnp.mean(jnp.sum(cost, axis=-1))
 
     def v_diff(x, t):
         v_seq = jax.vmap(model)(x, t)

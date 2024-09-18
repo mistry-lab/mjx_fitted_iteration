@@ -13,13 +13,14 @@ def controlled_simulate(x_inits, mx, ctx, v, PD=False):
     def get_ctrl(mx, dx):
         x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
         t = jnp.expand_dims(dx.time, axis=0)
-        act_id = mx.actuator_trnid[:, 0]
-        M = mjx.full_m(mx, dx)
-        invM = jnp.linalg.inv(M)
-        dvdx = jax.jacrev(v,0)(x, t)
-        G = jnp.vstack([jnp.zeros_like(invM), invM])
-        invR = jnp.linalg.inv(ctx.cfg.R)
-        u = (-1/2 * invR @ G.T[act_id, :] @ dvdx.T).squeeze()
+        # act_id = mx.actuator_trnid[:, 0]
+        # M = mjx.full_m(mx, dx)
+        # invM = jnp.linalg.inv(M)
+        # dvdx = jax.jacrev(v,0)(x, t)
+        # G = jnp.vstack([jnp.zeros_like(invM), invM])
+        # invR = jnp.linalg.inv(ctx.cfg.R)
+        # u = (-1/2 * invR @ G.T[act_id, :] @ dvdx.T).squeeze()
+        u = v(x, t)
 
         # PD Controller
         if PD:
@@ -31,7 +32,8 @@ def controlled_simulate(x_inits, mx, ctx, v, PD=False):
 
     def mjx_step(dx, _):
         dx = get_ctrl(mx, dx)
-        dx = jax.lax.stop_gradient(mjx.step(mx, dx))
+        # dx = jax.lax.stop_gradient(mjx.step(mx, dx))
+        dx = mjx.step(mx, dx)
         return dx, jnp.concatenate([dx.qpos, dx.qvel, dx.ctrl], axis=0)
 
     dx = set_init(x_inits)

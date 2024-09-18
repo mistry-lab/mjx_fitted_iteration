@@ -15,6 +15,7 @@ flax = "*"
 matplotlib = "*"
 nnx = "*"
 clu = "*"
+jupyter = "*"
 
 [dev-packages]
 
