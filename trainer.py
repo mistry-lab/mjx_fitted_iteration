@@ -6,7 +6,7 @@ from simulate import controlled_simulate
 # @eqx.filter_jit
 def loss_fn(params, static, x_init, mjmodel, ctx):
     model = eqx.combine(params, static)
-    _,_,costs = controlled_simulate(x_init, mjmodel, ctx, model)
+    _,_,costs,_ = controlled_simulate(x_init, mjmodel, ctx, model)
     costs = jnp.sum(costs, axis=1)
     return jnp.mean(costs)
 
@@ -22,8 +22,8 @@ def make_step(optim, model, state, loss, x_init, mjmodel, ctx):
 @eqx.filter_jit
 def loss_fn_td(params, static, x_init, mjmodel, ctx):
     @jax.vmap
-    def v_diff(x):
-        v_seq = jax.vmap(model)(x, ctx.cfg.horizon)
+    def v_diff(x,t):
+        v_seq = jax.vmap(model)(jax.vmap(ctx.cbs.state_encoder, in_axes=[0,None])(x,mjmodel), t)
         v0, v1 = v_seq[0:-1], v_seq[1:]
         return v0 - v1, v_seq[-1]
 
@@ -34,11 +34,27 @@ def loss_fn_td(params, static, x_init, mjmodel, ctx):
         return jnp.sum(jnp.square(v_diff_cost) + jnp.square(v_term_cost))
     
     model = eqx.combine(params, static)
-    x,_,costs = controlled_simulate(x_init, mjmodel, ctx, model)
+    x,_,costs,t = controlled_simulate(x_init, mjmodel, ctx, model)
     B, T, _ = x.shape
-    diff, term = v_diff(x)
+    diff, term = v_diff(x,t)
     costs = v_r_cost(diff.reshape(B, T-1), term.reshape(B, 1), costs)
     return jnp.mean(costs)
+
+def loss_fn_target(params, static, x_init, mjmodel, ctx):
+
+    @jax.vmap
+    def cost(x, costs):
+        pred = jax.vmap(model)(x, ctx.cfg.horizon)
+        targets = jnp.flip(costs)
+        targets = jnp.flip(jnp.cumsum(targets))
+        return jnp.sum(jnp.square(pred - targets))
+
+    model = eqx.combine(params, static)
+    x,_,costs =  controlled_simulate(x_init, mjmodel, ctx, model, PD=True)
+    # pred = jax.vmap(model)(x, ctx.cfg.horizon)
+    # pred = pred.reshape(y.shape)
+    # loss = jnp.sum(jnp.square(pred - y), axis=-1)
+    return jnp.mean(cost(x,costs))
 
 # def gen_traj_targets(x, u, ctx:Context):
 #     xs, xt = x[:-1], x[-1]
@@ -78,12 +94,6 @@ def loss_fn_td(params, static, x_init, mjmodel, ctx):
 #     model = eqx.apply_updates(model, updates)
 #     return model, state, loss_value
 
-# def loss_fn_target(params, static, x, times, y):
-#     model = eqx.combine(params, static)
-#     pred = jax.vmap(model)(x.reshape(-1, x.shape[-1]), times.reshape(-1,1))
-#     pred = pred.reshape(y.shape)
-#     loss = jnp.sum(jnp.square(pred - y), axis=-1)
-#     return jnp.mean(loss)
 
 
 

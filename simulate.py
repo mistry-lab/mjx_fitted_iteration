@@ -6,8 +6,8 @@ import equinox as eqx
 
 def cost_fn(x, u, ctx:Context):
     ucost = ctx.cbs.control_cost(u) * ctx.cfg.dt
-    xcst = ctx.cbs.run_cost(x) * ctx.cfg.dt
-    return jnp.array([xcst + ucost])
+    # xcst = ctx.cbs.run_cost(x) * ctx.cfg.dt
+    return jnp.array([ucost])
 
 @eqx.filter_jit
 def controlled_simulate(x_inits, mx, ctx, net, PD=False):
@@ -46,23 +46,27 @@ def controlled_simulate(x_inits, mx, ctx, net, PD=False):
         dx = carry
         x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
         t = jnp.expand_dims(dx.time, axis=0)
-        u = jax.lax.stop_gradient(policy(x,t,net,ctx.cfg,mx,dx)) # Policy function
-        # u = -1.*dx.qpos - 0.05*dx.qvel
+        # if PD:
+        #     u = -1.5*dx.qpos - 1.*dx.qvel
+        # else:
+        u = policy(x,t,net,ctx.cfg,mx,dx) # Policy function
         cost = cost_fn(x, u, ctx) # Cost function
 
         ctrl = dx.ctrl.at[:].set(u)
         dx = dx.replace(ctrl=ctrl)
         dx = mjx.step(mx, dx) # Dynamics function
-        return dx, jnp.concatenate([dx.qpos, dx.qvel, dx.ctrl, cost], axis=0)
+        return dx, jnp.concatenate([dx.qpos, dx.qvel, dx.ctrl, cost, t], axis=0)
     
     @jax.vmap
     def rollout(x_init):
         dx = set_init(x_init)
         _, res = jax.lax.scan(step, dx, None, length=ctx.cfg.nsteps)
-        x, u, costs = res[...,:-mx.nu-1], res[...,-mx.nu-1:-1], res[...,-1]
+        x, u, costs, ts = res[...,:-mx.nu-2], res[...,-mx.nu-2:-2], res[...,-2], res[...,-1]
         x = jnp.concatenate([x_init.reshape(1,-1), x], axis=0)
-        tcost = ctx.cbs.terminal_cost(x[-1]) # Terminal cost
+        # tcost = ctx.cbs.terminal_cost(x[-1]) # Terminal cost
+        tcost = jnp.array([0.])
         costs = jnp.concatenate([costs, tcost.reshape(-1)], axis=0)
-        return x,u,costs
+        t = jnp.concatenate([ts,jnp.array([ts[-1] + ctx.cfg.dt])], axis=0)
+        return x,u,costs,t
 
     return rollout(x_inits)

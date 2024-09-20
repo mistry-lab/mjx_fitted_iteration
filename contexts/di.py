@@ -84,11 +84,11 @@ ctx = Context(cfg=Config(
     lr=4.e-3,
     seed=0,
     nsteps=100,
-    epochs=50,
-    batch=500,
+    epochs=400,
+    batch=50,
     vis=50,
     dt=0.01,
-    R=jnp.array([[.1]]),
+    R=jnp.array([[.01]]),
     horizon=jnp.arange(0, (100 + 1)*0.01, 0.01) + 0.01
     ),cbs=Callbacks(
         # run_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([10., .1])), x),
@@ -96,8 +96,8 @@ ctx = Context(cfg=Config(
         # terminal_cost = lambda x: 10*jnp.sum(jnp.abs(jnp.dot(jnp.diag(jnp.array([10., 0.1])), x.T).T), axis=-1),
         # control_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.array([[.1]]), x).at[..., -1].set(0),
         run_cost= lambda x: jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10.,0.1])), x)),
-        control_cost= lambda x: jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0.1])), x)),
-        terminal_cost= lambda x: 2*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10.,0.1])), x)),
+        control_cost= lambda x: jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0.01])), x)),
+        terminal_cost= lambda x: 10*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10.,0.1])), x)),
         init_gen= lambda batch, key: jnp.concatenate([
             jax.random.uniform(key, (batch, 1), minval=-1., maxval=1.),
             jax.random.uniform(key, (batch, 1), minval=-0.7, maxval=0.7)
