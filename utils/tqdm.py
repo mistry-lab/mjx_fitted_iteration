@@ -7,8 +7,17 @@ from typing import Optional
 class tqdm:
     def __init__(self, iterable=None, desc: str = '', disable: bool = False, unit: str = 'it', unit_scale=False,
                  total: Optional[int] = None, rate: int = 100):
-        self.iterable, self.disable, self.unit, self.unit_scale, self.rate = iterable, disable, unit, unit_scale, rate
-        self.st, self.i, self.n, self.skip, self.t = time.perf_counter(), -1, 0, 1, getattr(iterable, "__len__",  lambda: 0)() if total is None else total
+        self.iterable = iterable
+        self.disable = disable
+        self.unit = unit
+        self.unit_scale = unit_scale
+        self.rate = rate
+        self.st = time.perf_counter()
+        self.i = -1
+        self.n = 0
+        self.skip = 1
+        self.t = getattr(iterable, "__len__",  lambda: 0)() if total is None else total
+        self.postfix = {}
         self.set_description(desc)
         self.update(0)
 
@@ -21,11 +30,20 @@ class tqdm:
     def set_description(self, desc: str):
         self.desc = f"{desc}: " if desc else ""
 
+    def set_postfix(self, ordered_dict=None, refresh=True, **kwargs):
+        if ordered_dict:
+            self.postfix.update(ordered_dict)
+        self.postfix.update(kwargs)
+        if refresh:
+            self.update(0)
+
     def update(self, n: int = 0, close: bool = False):
         self.n, self.i = self.n + n, self.i + 1
-        if self.disable or (not close and self.i % self.skip != 0): return
+        if self.disable or (not close and self.i % self.skip != 0):
+            return
         prog, elapsed, ncols = self.n / self.t if self.t else 0, time.perf_counter() - self.st, shutil.get_terminal_size().columns
-        if self.i / elapsed > self.rate and self.i: self.skip = max(int(self.i / elapsed) // self.rate, 1)
+        if self.i / elapsed > self.rate and self.i:
+            self.skip = max(int(self.i / elapsed) // self.rate, 1)
 
         def HMS(t):
             return ':'.join(
@@ -40,12 +58,21 @@ class tqdm:
         elapsed_text = HMS(elapsed) + (f'<{HMS(elapsed / prog - elapsed) if self.n else "?"}' if self.t else '')
         it_text = (SI(self.n / elapsed) if self.unit_scale else f"{self.n / elapsed:5.2f}") if self.n else "?"
         suf = f'{prog_text} [{elapsed_text}, {it_text}{self.unit}/s]'
-        sz = max(ncols - len(self.desc) - 3 - 2 - 2 - len(suf), 1)
+
+        # Include postfix information
+        postfix_str = ''
+        if self.postfix:
+            postfix_str = ' | ' + ', '.join(f'{k}={v}' for k, v in self.postfix.items())
+
+        sz = max(ncols - len(self.desc) - 3 - 2 - 2 - len(suf + postfix_str), 1)
+        num = sz * prog
+        bar_chars = "█" * int(num)
+        partial_char = " ▏▎▍▌▋▊▉"[int(8 * num) % 8].strip()
         bar = '\r' + self.desc + (
-            f'{100 * prog:3.0f}%|{("█" * int(num := sz * prog) + " ▏▎▍▌▋▊▉"[int(8 * num) % 8].strip()).ljust(sz, " ")}| ' if self.t else '') + suf
-        print(bar[:ncols + 1], flush=True, end='\n' * close, file=sys.stderr)
+            f'{100 * prog:3.0f}%|{(bar_chars + partial_char).ljust(sz, " ")}| ' if self.t else '') + suf + postfix_str
+        print(bar[:ncols + 1], flush=True, end='\r' * close, file=sys.stderr)
 
 
 class trange(tqdm):
-    def __init__(self, n: int, **kwargs): super().__init__(iterable=range(n), total=n, **kwargs)
-
+    def __init__(self, n: int, **kwargs):
+        super().__init__(iterable=range(n), total=n, **kwargs)

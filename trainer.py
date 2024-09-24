@@ -23,7 +23,7 @@ def make_step(optim, model, state, loss, x_init, mjmodel, ctx):
 def loss_fn_td(params, static, x_init, mjmodel, ctx):
     @jax.vmap
     def v_diff(x,t):
-        v_seq = jax.vmap(model)(jax.vmap(ctx.cbs.state_encoder, in_axes=[0,None])(x,mjmodel), t)
+        v_seq = jax.vmap(model)(x, t)
         v0, v1 = v_seq[0:-1], v_seq[1:]
         return v0 - v1, v_seq[-1]
 

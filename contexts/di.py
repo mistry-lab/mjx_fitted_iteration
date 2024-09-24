@@ -4,7 +4,10 @@ import equinox as eqx
 from .meta_context import Config, Callbacks, Context
 import os
 import jax.debug
+import mujoco
 from mujoco import mjx
+
+from .unitree_a1 import state_encoder
 
 try:
     # This works when __file__ is defined (e.g., in regular scripts)
@@ -14,6 +17,7 @@ except NameError:
     base_path = os.getcwd()
 
 base_path = os.path.join(base_path, '../xmls')
+model_path = os.path.join(base_path, 'doubleintegrator.xml')
 
 class ValueFunc(eqx.Module):
     layers: list
@@ -25,29 +29,13 @@ class ValueFunc(eqx.Module):
         self.layers = [eqx.nn.Linear(dims[i], dims[i + 1], key=keys[i], use_bias=True) for i in range(len(dims) - 1)]
         self.act = jax.nn.relu
 
-        # new_weight = jnp.array([[1.5,1.], [1.,1.5]])
-        # new_biases = jnp.array([0.,0.])
-        # where = lambda l: l.weight
-        # self.layers[0] = eqx.tree_at(where, self.layers[0], new_weight)        
-
     def __call__(self, x, t):
         t = t if t.ndim == 1 else t.reshape(1)
         x = jnp.concatenate([x, t], axis=-1)
-        # transformed_x = self.layers2[0](x)
-        # return transformed_x @ x
         for layer in self.layers[:-1]:
             x = self.act(layer(x))
         return self.layers[-1](x)
 
-        # f = lambda x: jnp.einsum('...i,ij,...j->...', x, self.layers[0].weight, x)
-        # v = f(x)
-        # return v
-
-        # PD Controller
-        #     f = lambda x: jnp.einsum('...i,ij,...j->...', x, jnp.array([[1.3, 1],[1,1.3]]), x)
-        #     v = f(x)
-        #     return v
-    
     @staticmethod
     def make_step(optim, model, state, loss, x, y):
         params, static = eqx.partition(model, eqx.is_array)
@@ -79,8 +67,6 @@ def hjb(x,t,net,cfg, mx, dx):
 
 
 ctx = Context(cfg=Config(
-    model_path=os.path.join(base_path, 'doubleintegrator.xml'),
-    dims=[2, 64, 64, 1],
     lr=4.e-3,
     seed=0,
     nsteps=100,
@@ -88,13 +74,10 @@ ctx = Context(cfg=Config(
     batch=50,
     vis=50,
     dt=0.01,
+    path=model_path,
     R=jnp.array([[.01]]),
-    horizon=jnp.arange(0, (100 + 1)*0.01, 0.01) + 0.01
-    ),cbs=Callbacks(
-        # run_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([10., .1])), x),
-        # terminal_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.diag(jnp.array([1., .01])), x),
-        # terminal_cost = lambda x: 10*jnp.sum(jnp.abs(jnp.dot(jnp.diag(jnp.array([10., 0.1])), x.T).T), axis=-1),
-        # control_cost= lambda x: jnp.einsum('...ti,ij,...tj->...t', x, jnp.array([[.1]]), x).at[..., -1].set(0),
+    mx=mjx.put_model(mujoco.MjModel.from_xml_path(model_path))
+),cbs=Callbacks(
         run_cost= lambda x: jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10.,0.1])), x)),
         control_cost= lambda x: jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0.01])), x)),
         terminal_cost= lambda x: 10*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10.,0.1])), x)),
@@ -102,7 +85,8 @@ ctx = Context(cfg=Config(
             jax.random.uniform(key, (batch, 1), minval=-1., maxval=1.),
             jax.random.uniform(key, (batch, 1), minval=-0.7, maxval=0.7)
         ], axis=1).squeeze(),
-    state_encoder=lambda x: x,
+    state_encoder= lambda x: x,
+    state_decoder= lambda x: x,
     gen_network = lambda : ValueFunc([3, 64, 64, 1], jax.random.PRNGKey(0)),
     controller = hjb
     )

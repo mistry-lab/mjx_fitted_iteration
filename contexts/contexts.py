@@ -1,7 +1,6 @@
 import os
-# from .cps import ctx as cp_ctx
+from .cps import ctx as cp_ctx
 from .di import ctx as di_ctx
-from .unitree_a1 import ctx as a1_ctx
 
 try:
     # This works when __file__ is defined (e.g., in regular scripts)
@@ -11,7 +10,6 @@ except NameError:
     base_path = os.getcwd()
 
 ctxs = {
-    # "cartpole_swing_up": cp_ctx,
     "double_integrator": di_ctx,
-    "unitree_a1": a1_ctx
+    "cartpole_swing_up": cp_ctx
 }
