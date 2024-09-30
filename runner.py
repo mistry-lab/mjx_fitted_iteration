@@ -32,7 +32,7 @@ if __name__ == '__main__':
             # Model definition
             model = mujoco.MjModel.from_xml_path(ctx.cfg.path)
             data = mujoco.MjData(model)
-            mx = mjx.put_model(model)
+            # mx = mjx.put_model(model)
             net = ctx.cbs.gen_network()
             optim = optax.adamw(ctx.cfg.lr)
             opt_state = optim.init(eqx.filter(net, eqx.is_array))
@@ -41,14 +41,14 @@ if __name__ == '__main__':
                 key, xkey, tkey = jax.random.split(key, num = 3)
                 x_inits = ctx.cbs.init_gen(ctx.cfg.batch, xkey)
                 key, xkey, tkey = jax.random.split(key, num = 3)
-                net, opt_state, loss_value = make_step(optim, net, opt_state, loss_fn_td, x_inits, mx, ctx)
+                net, opt_state, loss_value = net.make_step(optim, net, opt_state, loss_fn, x_inits, ctx)
                 wandb.log({"loss": loss_value})
                 es.set_postfix({"Loss": loss_value})
 
                 if e % ctx.cfg.vis == 0 or e == ctx.cfg.epochs - 1:
                     key, xkey, tkey = jax.random.split(key, num = 3)
                     x_inits = x_inits[jax.random.randint(tkey, (2,), 0, ctx.cfg.batch)]
-                    x, _,_,_ = controlled_simulate(x_inits, mx, ctx, net, PD=False)
+                    x, _,_,_ = controlled_simulate(x_inits, ctx, net)
                     x = jax.vmap(jax.vmap(ctx.cbs.state_decoder))(x)
                     x = np.array(x.squeeze())
                     animate_trajectory(x, data, model)

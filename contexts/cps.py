@@ -9,10 +9,8 @@ from .meta_context import Config, Callbacks, Context
 model_path = os.path.join(os.path.dirname(__file__), '../xmls/cartpole.xml')
 
 try:
-    # This works when __file__ is defined (e.g., in regular scripts)
     base_path = os.path.dirname(__file__)
 except NameError:
-    # Fallback to current working directory (e.g., in interactive sessions)
     base_path = os.getcwd()
 
 base_path = os.path.join(base_path, '../xmls')
@@ -35,9 +33,10 @@ class Policy(eqx.Module):
         return self.layers[-1](x)
 
     @staticmethod
-    def make_step(optim, model, state, loss, x, y):
+    @eqx.filter_jit
+    def make_step(optim, model, state, loss, x_init, ctx):
         params, static = eqx.partition(model, eqx.is_array)
-        loss_value, grads = jax.value_and_grad(loss)(params, static, x, y)
+        loss_value, grads = jax.value_and_grad(loss)(params, static, x_init, ctx)
         updates, state = optim.update(grads, state, model)
         model = eqx.apply_updates(model, updates)
         return model, state, loss_value
@@ -49,8 +48,33 @@ class Policy(eqx.Module):
         y = y.reshape(-1, 1)
         return jnp.mean(jnp.square(pred - y))
 
-def policy(x, t, net, cfg, mx, dx):
+def policy(
+        x: jnp.ndarray, t: jnp.ndarray, net: eqx.Module, cfg: Config, mx: mjx.Model, dx: mjx.Data
+) -> jnp.ndarray:
     return net(x, t)
+
+def run_cost(x: jnp.ndarray) -> jnp.ndarray:
+    return  jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0., 0., 0., 0])), x))
+
+def terminal_cost(x: jnp.ndarray) -> jnp.ndarray:
+    return 10*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([25, 100, 0.25, 1])), x))
+
+def control_cost(x: jnp.ndarray) -> jnp.ndarray:
+    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0.001])), x))
+
+def init_gen(batch: int, key: jnp.ndarray) -> jnp.ndarray:
+    return jnp.concatenate([
+        jax.random.uniform(key, (batch, 1), minval=-0.3, maxval=0.3),
+        jax.random.uniform(key, (batch, 1), minval=jnp.pi+0.3, maxval=jnp.pi-0.3),
+        jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1),
+        jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1)
+    ], axis=1).squeeze()
+
+def coder(x: jnp.ndarray) -> jnp.ndarray:
+    return x
+
+def gen_network() -> eqx.Module:
+    return Policy([5, 128, 128, 1], jax.random.PRNGKey(0))
 
 
 ctx = Context(
@@ -66,18 +90,13 @@ ctx = Context(
         path=model_path,
         mx=mjx.put_model(mujoco.MjModel.from_xml_path(model_path))),
     cbs=Callbacks(
-        run_cost= lambda x: jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0., 0., 0., 0])), x)),
-        terminal_cost= lambda x: 10*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([25, 100, 0.25, 1])), x)),
-        control_cost= lambda x: jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0.001])), x)),
-        init_gen= lambda batch, key: jnp.concatenate([
-            jax.random.uniform(key, (batch, 1), minval=-0.3, maxval=0.3),
-            jax.random.uniform(key, (batch, 1), minval=jnp.pi+0.3, maxval=jnp.pi-0.3),
-            jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1),
-            jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1)
-        ], axis=1).squeeze(),
-        state_encoder=lambda x: x,
-        state_decoder=lambda x: x,
-        gen_network=lambda :Policy([5, 128, 128, 1], jax.random.PRNGKey(0)),
+        run_cost= run_cost,
+        terminal_cost= terminal_cost,
+        control_cost= control_cost,
+        init_gen= init_gen,
+        state_encoder= coder,
+        state_decoder= coder,
+        gen_network=gen_network,
         controller=policy
     )
 )

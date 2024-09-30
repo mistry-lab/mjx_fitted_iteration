@@ -10,7 +10,8 @@ def cost_fn(x, u, ctx:Context):
     return jnp.array([ucost + xcst])
 
 @eqx.filter_jit
-def controlled_simulate(x_inits, mx, ctx, net, PD=False):
+def controlled_simulate(x_inits, ctx, net):
+    mx = ctx.cfg.mx
     def set_init(x):
         dx = mjx.make_data(mx)
         qpos = dx.qpos.at[:].set(x[:mx.nq])
@@ -18,14 +19,11 @@ def controlled_simulate(x_inits, mx, ctx, net, PD=False):
         dx = dx.replace(qpos=qpos, qvel=qvel)
         return mjx.step(mx, dx)
 
-    def policy(x,t,nn,cfg,mx,dx):
-        return ctx.cbs.controller(x,t,nn,cfg,mx,dx)
-
     def step(carry, _):
         dx = carry
         x = ctx.cbs.state_encoder(jnp.concatenate([dx.qpos, dx.qvel], axis=0))
         t = jnp.expand_dims(dx.time, axis=0)
-        u = policy(x,t,net,ctx.cfg,mx,dx) # Policy function
+        u = ctx.cbs.controller(x,t,net,ctx.cfg,mx,dx) #policy(x,t,net,ctx.cfg,mx,dx) # Policy function
         cost = cost_fn(x, u, ctx) # Cost function
         ctrl = dx.ctrl.at[:].set(u)
         dx = dx.replace(ctrl=ctrl)
