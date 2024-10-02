@@ -6,7 +6,7 @@ import mujoco
 from mujoco import mjx
 from diff_sim.loss_funcs import loss_fn
 from diff_sim.context.meta_context import Config, Callbacks, Context
-from diff_sim.nn import Network
+from diff_sim.nn.base_nn import Network
 
 model_path = os.path.join(os.path.dirname(__file__), '../xmls/cartpole.xml')
 
