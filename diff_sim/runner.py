@@ -27,7 +27,7 @@ if __name__ == '__main__':
             wandb.init(project=args.wb_project, anonymous="allow", mode='offline')
         )
 
-        # Initial keys for random number generation these will be split for each iteration
+        # initial keys for random number generation these will be split for each iteration
         init_key = jax.random.PRNGKey(ctx.cfg.seed)
         key, subkey = jax.random.split(init_key)
 
@@ -41,7 +41,7 @@ if __name__ == '__main__':
             opt_state = optim.init(eqx.filter(net, eqx.is_array))
             es = trange(ctx.cfg.epochs)
 
-            # Run through the epochs and log the loss
+            # run through the epochs and log the loss
             for e in es:
                 key, xkey, tkey = jax.random.split(key, num = 3)
                 x_inits = ctx.cbs.init_gen(ctx.cfg.batch, xkey)

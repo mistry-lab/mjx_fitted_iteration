@@ -10,10 +10,11 @@ from jax import numpy as jnp
 import jax.tree_util
 from jaxtyping import PyTree
 import equinox as eqx
+from diff_sim.nn import Network
 
 
 @partial(jax.tree_util.register_dataclass,
-         data_fields=['R', 'horizon', 'mx'],
+         data_fields=['horizon', 'mx'],
          meta_fields=['lr', 'seed', 'nsteps', 'epochs', 'batch', 'vis', 'dt', 'path'])
 @dataclass(frozen=True)
 class Config:
@@ -25,7 +26,6 @@ class Config:
     vis: int
     dt: float
     path: str
-    R: jnp.ndarray
     mx: mjx.Model
 
 class Callbacks:
@@ -37,8 +37,8 @@ class Callbacks:
             init_gen: Callable[[int, jnp.ndarray], jnp.ndarray],
             state_encoder: Callable[[jnp.ndarray], jnp.ndarray],
             state_decoder: Callable[[jnp.ndarray], jnp.ndarray],
-            gen_network: Callable[[], eqx.Module],
-            controller: Callable[[jnp.ndarray, jnp.ndarray, eqx.Module, Config, mjx.Model, mjx.Data], jnp.ndarray],
+            gen_network: Callable[[], Network],
+            controller: Callable[[jnp.ndarray, jnp.ndarray, Network, Config, mjx.Model, mjx.Data], jnp.ndarray],
             loss_func: Callable[[PyTree, PyTree, jnp.ndarray, Context], jnp.ndarray]
     ):
         self.run_cost = run_cost
@@ -105,6 +105,3 @@ class Context:
     def __init__(self, cfg: Config, cbs: Callbacks):
         self.cfg = cfg
         self.cbs = cbs
-        assert jnp.all(jnp.linalg.eigh(self.cfg.R)[0] > 0), (
-            "R should be positive definite."
-        )

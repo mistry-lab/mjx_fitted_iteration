@@ -6,11 +6,12 @@ import mujoco
 from mujoco import mjx
 from diff_sim.loss_funcs import loss_fn
 from diff_sim.context.meta_context import Config, Callbacks, Context
+from diff_sim.nn import Network
 
 model_path = os.path.join(os.path.dirname(__file__), '../xmls/cartpole.xml')
 
 
-class Policy(eqx.Module):
+class Policy(Network):
     layers: list
     act: callable
 
@@ -26,34 +27,23 @@ class Policy(eqx.Module):
             x = self.act(layer(x))
         return self.layers[-1](x)
 
-    @staticmethod
-    @eqx.filter_jit
-    def make_step(optim, model, state, x_init, ctx):
-        params, static = eqx.partition(model, eqx.is_array)
-        loss_value, grads = jax.value_and_grad(ctx.cbs.loss_func)(params, static, x_init, ctx)
-        updates, state = optim.update(grads, state, model)
-        model = eqx.apply_updates(model, updates)
-        return model, state, loss_value
-
-    @staticmethod
-    def loss_fn(params, static, x, y):
-        model = eqx.combine(params, static)
-        pred = jax.vmap(model)(x.reshape(-1, x.shape[-1]))
-        y = y.reshape(-1, 1)
-        return jnp.mean(jnp.square(pred - y))
 
 def policy(
-        x: jnp.ndarray, t: jnp.ndarray, net: eqx.Module, cfg: Config, mx: mjx.Model, dx: mjx.Data
+        x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data
 ) -> jnp.ndarray:
+    # returns the control action
     return net(x, t)
 
 def run_cost(x: jnp.ndarray) -> jnp.ndarray:
+    # x^T Q x
     return  jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0., 0., 0., 0])), x))
 
 def terminal_cost(x: jnp.ndarray) -> jnp.ndarray:
+    # x^T Q_f x
     return 10*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([25, 100, 0.25, 1])), x))
 
 def control_cost(x: jnp.ndarray) -> jnp.ndarray:
+    # u^T R u
     return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0.001])), x))
 
 def init_gen(batch: int, key: jnp.ndarray) -> jnp.ndarray:
@@ -65,9 +55,10 @@ def init_gen(batch: int, key: jnp.ndarray) -> jnp.ndarray:
     ], axis=1).squeeze()
 
 def coder(x: jnp.ndarray) -> jnp.ndarray:
+    # encode and decode the state. Do nothing in this case
     return x
 
-def gen_network() -> eqx.Module:
+def gen_network() -> Network:
     return Policy([5, 128, 128, 1], jax.random.PRNGKey(0))
 
 
@@ -75,12 +66,11 @@ ctx = Context(
     cfg=Config(
         lr=4e-3,
         seed=0,
-        nsteps=120,
+        nsteps=125,
         epochs=400,
         batch=1000,
         vis=10,
         dt=0.01,
-        R=jnp.array([[1]]),
         path=model_path,
         mx=mjx.put_model(mujoco.MjModel.from_xml_path(model_path))),
     cbs=Callbacks(
