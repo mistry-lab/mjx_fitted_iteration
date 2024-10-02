@@ -9,3 +9,7 @@ NOTE: We rely on cuda enabled jax library. This does is not included in the Pipf
 
 If absolute import error occurs, run the following command:
 - pipenv install -e /path_to/mjx_fitted_iteration/
+
+On MacOS mujoco can not handle launch passive, you need to use mjpython instead of python which is bundled with mujoco install for example
+
+- mjpython runner.py instead of python/python3 runner

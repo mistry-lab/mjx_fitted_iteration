@@ -34,7 +34,6 @@ def loss_fn_td(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context
             params: PyTree, model parameters
             static: PyTree, static parameters
             x_init: jnp.ndarray, initial state
-            mjmodel: mujoco.MjModel, mujoco model
             ctx: Context, context object
         Returns:
             jnp.ndarray, loss value
@@ -69,7 +68,6 @@ def loss_fn_target(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Con
             params: PyTree, model parameters
             static: PyTree, static parameters
             x_init: jnp.ndarray, initial state
-            mjmodel: mujoco.MjModel, mujoco model
             ctx: Context, context object
         Returns:
             jnp.ndarray, loss value
