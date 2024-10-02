@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import collections.abc
 from typing import Callable, get_type_hints, get_args, get_origin
 from inspect import signature, Parameter
@@ -6,6 +8,7 @@ from functools import partial
 from mujoco import mjx
 from jax import numpy as jnp
 import jax.tree_util
+from jaxtyping import PyTree
 import equinox as eqx
 
 
@@ -35,7 +38,8 @@ class Callbacks:
             state_encoder: Callable[[jnp.ndarray], jnp.ndarray],
             state_decoder: Callable[[jnp.ndarray], jnp.ndarray],
             gen_network: Callable[[], eqx.Module],
-            controller: Callable[[jnp.ndarray, jnp.ndarray, eqx.Module, Config, mjx.Model, mjx.Data], jnp.ndarray]
+            controller: Callable[[jnp.ndarray, jnp.ndarray, eqx.Module, Config, mjx.Model, mjx.Data], jnp.ndarray],
+            loss_func: Callable[[PyTree, PyTree, jnp.ndarray, Context], jnp.ndarray]
     ):
         self.run_cost = run_cost
         self.terminal_cost = terminal_cost
@@ -45,6 +49,7 @@ class Callbacks:
         self.state_decoder = state_decoder
         self.gen_network = gen_network
         self.controller = controller
+        self.loss_func = loss_func
         self._validate_callbacks()
 
     def _validate_callbacks(self):

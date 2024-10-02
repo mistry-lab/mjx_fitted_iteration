@@ -15,6 +15,7 @@ flax = "*"
 matplotlib = "*"
 nnx = "*"
 clu = "*"
+diff-sim = {file = ".", editable = true}
 
 [dev-packages]
 

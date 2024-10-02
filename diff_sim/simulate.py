@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
 from mujoco import mjx
-from contexts.meta_context import Context
+from diff_sim.context.meta_context import Context
 import equinox as eqx
 
 def cost_fn(x, u, ctx:Context):

@@ -1,17 +1,15 @@
 import argparse
-import mujoco
-from mujoco import mjx
 import wandb
-from contexts.contexts import ctxs
-from simulate import controlled_simulate
+import numpy as np
+import mujoco
 import equinox as eqx
 import optax
-from utils.tqdm import trange
-import numpy as np
-from utils.mj_vis import animate_trajectory
 import jax.debug
-from trainer import make_step, loss_fn, loss_fn_td, loss_fn_target
 from jax import config
+from diff_sim.context.tasks import ctxs
+from diff_sim.simulate import controlled_simulate
+from diff_sim.utils.tqdm import trange
+from diff_sim.utils.mj_vis import animate_trajectory
 
 config.update('jax_default_matmul_precision', jax.lax.Precision.HIGH)
 
@@ -41,7 +39,7 @@ if __name__ == '__main__':
                 key, xkey, tkey = jax.random.split(key, num = 3)
                 x_inits = ctx.cbs.init_gen(ctx.cfg.batch, xkey)
                 key, xkey, tkey = jax.random.split(key, num = 3)
-                net, opt_state, loss_value = net.make_step(optim, net, opt_state, loss_fn, x_inits, ctx)
+                net, opt_state, loss_value = net.make_step(optim, net, opt_state, x_inits, ctx)
                 wandb.log({"loss": loss_value})
                 es.set_postfix({"Loss": loss_value})
 

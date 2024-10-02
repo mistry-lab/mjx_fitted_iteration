@@ -4,16 +4,10 @@ from jax import numpy as jnp
 import equinox as eqx
 import mujoco
 from mujoco import mjx
-from .meta_context import Config, Callbacks, Context
+from diff_sim.loss_funcs import loss_fn
+from diff_sim.context.meta_context import Config, Callbacks, Context
 
 model_path = os.path.join(os.path.dirname(__file__), '../xmls/cartpole.xml')
-
-try:
-    base_path = os.path.dirname(__file__)
-except NameError:
-    base_path = os.getcwd()
-
-base_path = os.path.join(base_path, '../xmls')
 
 
 class Policy(eqx.Module):
@@ -34,9 +28,9 @@ class Policy(eqx.Module):
 
     @staticmethod
     @eqx.filter_jit
-    def make_step(optim, model, state, loss, x_init, ctx):
+    def make_step(optim, model, state, x_init, ctx):
         params, static = eqx.partition(model, eqx.is_array)
-        loss_value, grads = jax.value_and_grad(loss)(params, static, x_init, ctx)
+        loss_value, grads = jax.value_and_grad(ctx.cbs.loss_func)(params, static, x_init, ctx)
         updates, state = optim.update(grads, state, model)
         model = eqx.apply_updates(model, updates)
         return model, state, loss_value
@@ -97,6 +91,7 @@ ctx = Context(
         state_encoder= coder,
         state_decoder= coder,
         gen_network=gen_network,
-        controller=policy
+        controller=policy,
+        loss_func=loss_fn
     )
 )

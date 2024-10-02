@@ -1,25 +1,32 @@
 import jax
 import jax.numpy as jnp
 import equinox as eqx
+from jaxtyping import PyTree
+from diff_sim.context.meta_context import Context
 from simulate import controlled_simulate
 
-# @eqx.filter_jit
-def loss_fn(params, static, x_init, ctx):
+def loss_fn(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> jnp.ndarray:
+    """
+        Loss function for the policy optimization problem
+        Args:
+            params: PyTree, model parameters
+            static: PyTree, static parameters
+            x_init: jnp.ndarray, initial state
+            ctx: Context, context object
+        Returns:
+            jnp.ndarray, loss value
+
+        Mathematical Formulation:
+        We compute the sum of the costs over the entire trajectory and average it over the batch
+        loss = 1/B * sum_{b=1}^{B} sum_{t=1}^{T} cost(x_{b,t}, u_{b,t})
+    """
     model = eqx.combine(params, static)
     _,_,costs,_ = controlled_simulate(x_init, ctx, model)
     costs = jnp.sum(costs, axis=1)
     return jnp.mean(costs)
 
-@eqx.filter_jit
-def make_step(optim, model, state, loss, x_init, mjmodel, ctx):
-    params, static = eqx.partition(model, eqx.is_array)
-    loss_value, grads = jax.value_and_grad(loss)(params, static, x_init, mjmodel, ctx)
-    updates, state = optim.update(grads, state, model)
-    model = eqx.apply_updates(model, updates)
-    return model, state, loss_value
 
-
-@eqx.filter_jit
+# @eqx.filter_jit
 def loss_fn_td(params, static, x_init, mjmodel, ctx):
     @jax.vmap
     def v_diff(x,t):
