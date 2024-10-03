@@ -32,7 +32,8 @@ class Policy(Network):
 def policy(
         x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data
 ) -> jnp.ndarray:
-    # returns the control action
+    # under this policy the cost function is quite important the cost that works is:
+    # Q = diag([0, 0]) or Q = diag([10, 0.01]) and R = diag([0.01]) and QF = diag([10, 0.01])
     act_id = mx.actuator_trnid[:, 0]
     M = mjx.full_m(mx, dx)
     invM = jnp.linalg.inv(M)
@@ -44,7 +45,7 @@ def policy(
 
 def run_cost(x: jnp.ndarray) -> jnp.ndarray:
     # x^T Q x
-    return  jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10, 0.01])), x))
+    return  jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0, 0])), x))
 
 def terminal_cost(x: jnp.ndarray) -> jnp.ndarray:
     # x^T Q_f x
