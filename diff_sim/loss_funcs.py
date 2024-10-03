@@ -21,7 +21,7 @@ def loss_fn_policy_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx:
             loss = 1/B * sum_{b=1}^{B} sum_{t=1}^{T} cost(x_{b,t}, u_{b,t})
     """
     model = eqx.combine(params, static)
-    _,_,costs,_ = controlled_simulate(x_init, ctx, model)
+    _,_,costs,_ = controlled_simulate(x_init, ctx, model) #shape: (B, T, 1)
     costs = jnp.sum(costs, axis=1)
     costs = jnp.mean(costs)
     return costs, costs
@@ -54,7 +54,7 @@ def loss_fn_policy_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ct
 
 def loss_fn_td_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
-        Loss function for the temporal difference policy optimization problem
+        Loss function for the temporal difference value/policy optimization problem
         Args:
             params: PyTree, model parameters
             static: PyTree, static parameters
@@ -90,7 +90,7 @@ def loss_fn_td_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Con
 
 def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
-        Loss function for the temporal difference policy optimization problem
+        Loss function for the temporal difference value/policy optimization problem
         IF YOUR POLICY IS NOT STOCHASTIC (NO NOISE) OR SAMPLES = 1 THIS WILL BE IDENTICAL TO loss_fn_td_det
         Args:
             params: PyTree, model parameters
@@ -104,7 +104,6 @@ def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: C
             We compute the temporal difference loss over the entire trajectory and average it over the batch
             loss = 1/B * sum_{b=1}^{B} sum_{t=1}^{T} (v(x_{b,t}) - v(x_{b,t+1}) - c(x_{b,t}, u_{b,t}))^2
     """
-
     @jax.vmap
     def compute_values(x, t):
         return jax.vmap(model)(x, t)
@@ -132,7 +131,7 @@ def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: C
 
 def loss_fn_target_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
-        Loss function for the target for fitted value iteration
+        Loss function for the target for fitted value iteration to learn value/policy
         Args:
             params: PyTree, model parameters
             static: PyTree, static parameters
