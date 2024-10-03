@@ -1,17 +1,19 @@
 import jax
 import jax.numpy as jnp
 from mujoco import mjx
-from diff_sim.context.meta_context import Context
 import equinox as eqx
-
-def cost_fn(x, u, ctx:Context):
-    ucost = ctx.cbs.control_cost(u) * ctx.cfg.dt
-    xcst = ctx.cbs.run_cost(x) * ctx.cfg.dt
-    return jnp.array([ucost + xcst])
+from diff_sim.context.meta_context import Context
+from diff_sim.nn.base_nn import Network
 
 @eqx.filter_jit
-def controlled_simulate(x_inits, ctx, net):
+def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network):
     mx = ctx.cfg.mx
+
+    def cost_fn(x, u):
+        ucost = ctx.cbs.control_cost(u) * ctx.cfg.dt
+        xcst = ctx.cbs.run_cost(x) * ctx.cfg.dt
+        return jnp.array([ucost + xcst])
+
     def set_init(x):
         dx = mjx.make_data(mx)
         qpos = dx.qpos.at[:].set(x[:mx.nq])
@@ -23,8 +25,8 @@ def controlled_simulate(x_inits, ctx, net):
         dx = carry
         x = ctx.cbs.state_encoder(jnp.concatenate([dx.qpos, dx.qvel], axis=0))
         t = jnp.expand_dims(dx.time, axis=0)
-        u = ctx.cbs.controller(x,t,net,ctx.cfg,mx,dx) #policy(x,t,net,ctx.cfg,mx,dx) # Policy function
-        cost = cost_fn(x, u, ctx) # Cost function
+        u = ctx.cbs.controller(x,t,net,ctx.cfg,mx,dx)
+        cost = cost_fn(x, u)
         ctrl = dx.ctrl.at[:].set(u)
         dx = dx.replace(ctrl=ctrl)
         dx = mjx.step(mx, dx) # Dynamics function

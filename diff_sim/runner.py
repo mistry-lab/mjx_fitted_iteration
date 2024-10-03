@@ -1,6 +1,5 @@
 import argparse
 import wandb
-import numpy as np
 import mujoco
 from mujoco import viewer
 import equinox as eqx
@@ -8,9 +7,8 @@ import optax
 import jax.debug
 from jax import config
 from diff_sim.context.tasks import ctxs
-from diff_sim.simulate import controlled_simulate
 from diff_sim.utils.tqdm import trange
-from diff_sim.utils.mj_vis import animate_trajectory
+from diff_sim.utils.mj_vis import visualise_policy
 
 config.update('jax_default_matmul_precision', jax.lax.Precision.HIGH)
 
@@ -39,25 +37,19 @@ if __name__ == '__main__':
         with (jax.default_device(jax.devices()[0])) and viewer.launch_passive(model, data) as viewer:
             net, optim = ctx.cbs.gen_network(ctx.cfg.seed), optax.adamw(ctx.cfg.lr)
             opt_state = optim.init(eqx.filter(net, eqx.is_array))
-            es = trange(ctx.cfg.epochs)
 
             # run through the epochs and log the loss
+            es = trange(ctx.cfg.epochs)
             for e in es:
                 key, xkey, tkey = jax.random.split(key, num = 3)
                 x_inits = ctx.cbs.init_gen(ctx.cfg.batch * ctx.cfg.samples, xkey)
-                key, xkey, tkey = jax.random.split(key, num = 3)
                 net, opt_state, loss_value, traj_cost = net.make_step(optim, net, opt_state, x_inits, ctx)
                 log_data = {"loss": round(loss_value.item(), 3), "Traj Cost": round(traj_cost.item(), 3)}
                 wandb.log(log_data)
                 es.set_postfix(log_data)
 
                 if e % ctx.cfg.vis == 0 or e == ctx.cfg.epochs - 1:
-                    key, xkey, tkey = jax.random.split(key, num = 3)
-                    x_inits = x_inits[jax.random.randint(tkey, (2,), 0, ctx.cfg.batch)]
-                    x, _,_,_ = controlled_simulate(x_inits, ctx, net)
-                    x = jax.vmap(jax.vmap(ctx.cbs.state_decoder))(x)
-                    x = np.array(x.squeeze())
-                    animate_trajectory(x, data, model, viewer)
+                    visualise_policy(data, model, viewer, ctx, net, key)
 
     except KeyboardInterrupt:
         print("Exit wandb")

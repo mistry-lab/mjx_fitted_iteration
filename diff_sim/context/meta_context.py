@@ -106,3 +106,7 @@ class Context:
     def __init__(self, cfg: Config, cbs: Callbacks):
         self.cfg = cfg
         self.cbs = cbs
+        assert jnp.isclose(cfg.dt, cfg.mx.opt.timestep, atol=1e-6)
+
+
+
