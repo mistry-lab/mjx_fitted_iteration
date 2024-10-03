@@ -60,6 +60,7 @@ def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
         jax.random.uniform(key, (total_batch, 1), minval=-1, maxval=1),
         jax.random.uniform(key, (total_batch, 1), minval=-.7, maxval=.7)
     ], axis=1).squeeze()
+
     return xinits
 
 def state_encoder(x: jnp.ndarray) -> jnp.ndarray:
@@ -80,7 +81,7 @@ ctx = Context(
         nsteps=100,
         epochs=1000,
         batch=64,
-        samples=1,
+        samples=2,
         vis=10,
         dt=0.01,
         path=model_path,
@@ -95,6 +96,6 @@ ctx = Context(
         state_decoder=state_decoder,
         gen_network=gen_network,
         controller=policy,
-        loss_func=loss_fn_td_det
+        loss_func=loss_fn_td_stoch
     )
 )

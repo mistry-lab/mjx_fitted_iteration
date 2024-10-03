@@ -1,9 +1,6 @@
-from typing import Tuple
-
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from jax import Array
 from jaxtyping import PyTree
 from diff_sim.context.meta_context import Context
 from diff_sim.simulate import controlled_simulate
@@ -91,7 +88,7 @@ def loss_fn_td_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Con
     return jnp.mean(costs), traj_costs
 
 
-def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> (jnp.ndarray, jnp.ndarray):
+def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
         Loss function for the temporal difference policy optimization problem
         IF YOUR POLICY IS NOT STOCHASTIC (NO NOISE) OR SAMPLES = 1 THIS WILL BE IDENTICAL TO loss_fn_td_det
@@ -133,7 +130,7 @@ def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: C
     costs = td_cost(diff, term, costs) #shape: (B)
     return jnp.mean(costs), traj_costs
 
-def loss_fn_target_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> (jnp.ndarray, jnp.ndarray):
+def loss_fn_target_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
         Loss function for the target for fitted value iteration
         Args:

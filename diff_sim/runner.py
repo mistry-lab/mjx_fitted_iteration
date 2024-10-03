@@ -17,12 +17,10 @@ config.update('jax_default_matmul_precision', jax.lax.Precision.HIGH)
 if __name__ == '__main__':
     try:
         parser = argparse.ArgumentParser()
-        parser.add_argument("--task", help="task name", default="cartpole_swing_up")
-        parser.add_argument("--wb_project", help="wandb project name", default="diff_sim")
+        parser.add_argument("--task", help="task name", default="double_integrator")
+        parser.add_argument("--wb_project", help="wandb project name", default="not_named")
         args = parser.parse_args()
         ctx = ctxs[args.task]
-
-        # set the name of the wandb project
 
         # Initialize wandb
         wandb.init(anonymous="allow", mode='offline') if args.wb_project is None else (
