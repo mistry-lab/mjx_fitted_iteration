@@ -28,7 +28,7 @@ class Network(eqx.Module, ABC):
     def make_step(optim, model, state, x_init, ctx):
         """
         Performs a single optimization step.
-
+r
         Args:
             optim: Optimizer instance (e.g., from optax).
             model (BasePolicy): The model to update.

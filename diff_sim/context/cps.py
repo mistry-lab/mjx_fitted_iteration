@@ -4,7 +4,7 @@ from jax import numpy as jnp
 import equinox as eqx
 import mujoco
 from mujoco import mjx
-from diff_sim.loss_funcs import loss_fn
+from diff_sim.loss_funcs import loss_fn_policy_stoch
 from diff_sim.context.meta_context import Config, Callbacks, Context
 from diff_sim.nn.base_nn import Network
 
@@ -17,7 +17,9 @@ class Policy(Network):
 
     def __init__(self, dims: list, key):
         keys = jax.random.split(key, len(dims))
-        self.layers = [eqx.nn.Linear(dims[i], dims[i + 1], key=keys[i], use_bias=True) for i in range(len(dims) - 1)]
+        self.layers = [eqx.nn.Linear(
+            dims[i], dims[i + 1], key=keys[i], use_bias=True
+        ) for i in range(len(dims) - 1)]
         self.act = jax.nn.relu
 
     def __call__(self, x, t):
@@ -46,20 +48,22 @@ def control_cost(x: jnp.ndarray) -> jnp.ndarray:
     # u^T R u
     return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0.001])), x))
 
-def init_gen(batch: int, key: jnp.ndarray) -> jnp.ndarray:
-    return jnp.concatenate([
-        jax.random.uniform(key, (batch, 1), minval=-0.3, maxval=0.3),
-        jax.random.uniform(key, (batch, 1), minval=jnp.pi+0.3, maxval=jnp.pi-0.3),
-        jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1),
-        jax.random.uniform(key, (batch, 1), minval=-0.1, maxval=0.1)
+def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
+    xinits = jnp.concatenate([
+        jax.random.uniform(key, (total_batch, 1), minval=-0.3, maxval=0.3),
+        jax.random.uniform(key, (total_batch, 1), minval=jnp.pi+0.3, maxval=jnp.pi-0.3),
+        jax.random.uniform(key, (total_batch, 1), minval=-0.1, maxval=0.1),
+        jax.random.uniform(key, (total_batch, 1), minval=-0.1, maxval=0.1)
     ], axis=1).squeeze()
+    return xinits
+
 
 def coder(x: jnp.ndarray) -> jnp.ndarray:
     # encode and decode the state. Do nothing in this case
     return x
 
-def gen_network() -> Network:
-    return Policy([5, 128, 128, 1], jax.random.PRNGKey(0))
+def gen_network(seed: int) -> Network:
+    return Policy([5, 128, 128, 1], jax.random.PRNGKey(seed))
 
 
 ctx = Context(
@@ -69,6 +73,7 @@ ctx = Context(
         nsteps=125,
         epochs=400,
         batch=1000,
+        samples=1,
         vis=10,
         dt=0.01,
         path=model_path,
@@ -82,6 +87,6 @@ ctx = Context(
         state_decoder= coder,
         gen_network=gen_network,
         controller=policy,
-        loss_func=loss_fn
+        loss_func=loss_fn_policy_stoch
     )
 )

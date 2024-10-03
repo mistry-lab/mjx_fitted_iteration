@@ -35,12 +35,12 @@ def controlled_simulate(x_inits, ctx, net):
     def rollout(x_init):
         dx = set_init(x_init)
         x_init = ctx.cbs.state_encoder(x_init)
-        _, res = jax.lax.scan(step, dx, None, length=ctx.cfg.nsteps)
+        _, res = jax.lax.scan(step, dx, None, length=ctx.cfg.nsteps-1)
         x, u, costs, ts = res[...,:-mx.nu-2], res[...,-mx.nu-2:-2], res[...,-2], res[...,-1]
         x = jnp.concatenate([x_init.reshape(1,-1), x], axis=0)
         tcost = ctx.cbs.terminal_cost(x[-1]) # Terminal cost
         costs = jnp.concatenate([costs, tcost.reshape(-1)], axis=0)
         t = jnp.concatenate([ts,jnp.array([ts[-1] + ctx.cfg.dt])], axis=0)
-        return x,u,costs,t
+        return x, u, costs, t
 
     return rollout(x_inits)

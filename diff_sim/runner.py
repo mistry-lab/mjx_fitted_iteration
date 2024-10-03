@@ -37,14 +37,14 @@ if __name__ == '__main__':
 
         # start the training loop in jax default device and launch a passive viewer
         with (jax.default_device(jax.devices()[0])) and viewer.launch_passive(model, data) as viewer:
-            net, optim = ctx.cbs.gen_network(), optax.adamw(ctx.cfg.lr)
+            net, optim = ctx.cbs.gen_network(ctx.cfg.seed), optax.adamw(ctx.cfg.lr)
             opt_state = optim.init(eqx.filter(net, eqx.is_array))
             es = trange(ctx.cfg.epochs)
 
             # run through the epochs and log the loss
             for e in es:
                 key, xkey, tkey = jax.random.split(key, num = 3)
-                x_inits = ctx.cbs.init_gen(ctx.cfg.batch, xkey)
+                x_inits = ctx.cbs.init_gen(ctx.cfg.batch * ctx.cfg.samples, xkey)
                 key, xkey, tkey = jax.random.split(key, num = 3)
                 net, opt_state, loss_value = net.make_step(optim, net, opt_state, x_inits, ctx)
                 wandb.log({"loss": loss_value})

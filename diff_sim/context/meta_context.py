@@ -9,24 +9,24 @@ from mujoco import mjx
 from jax import numpy as jnp
 import jax.tree_util
 from jaxtyping import PyTree
-import equinox as eqx
-from diff_sim.nn import Network
+from diff_sim.nn.base_nn import Network
 
 
 @partial(jax.tree_util.register_dataclass,
          data_fields=['horizon', 'mx'],
-         meta_fields=['lr', 'seed', 'nsteps', 'epochs', 'batch', 'vis', 'dt', 'path'])
+         meta_fields=['lr', 'seed', 'nsteps', 'epochs', 'batch', 'samples', 'vis', 'dt', 'path'])
 @dataclass(frozen=True)
 class Config:
-    lr: float
-    seed: int
-    nsteps: int
-    epochs: int
-    batch: int
-    vis: int
-    dt: float
-    path: str
-    mx: mjx.Model
+    lr: float     # learning rate
+    seed: int     # random seed
+    nsteps: int   # simulation steps
+    epochs: int   # training epochs
+    batch: int    # batch size (number simulations)
+    samples: int  # number of simulations per initial state
+    vis: int      # visualization frequency
+    dt: float     # simulation time step
+    path: str     # path to the mujoco model
+    mx: mjx.Model # mujoco model
 
 class Callbacks:
     def __init__(
@@ -37,24 +37,25 @@ class Callbacks:
             init_gen: Callable[[int, jnp.ndarray], jnp.ndarray],
             state_encoder: Callable[[jnp.ndarray], jnp.ndarray],
             state_decoder: Callable[[jnp.ndarray], jnp.ndarray],
-            gen_network: Callable[[], Network],
+            gen_network: Callable[[int], Network],
             controller: Callable[[jnp.ndarray, jnp.ndarray, Network, Config, mjx.Model, mjx.Data], jnp.ndarray],
             loss_func: Callable[[PyTree, PyTree, jnp.ndarray, Context], jnp.ndarray]
     ):
-        self.run_cost = run_cost
-        self.terminal_cost = terminal_cost
-        self.control_cost = control_cost
-        self.init_gen = init_gen
-        self.state_encoder = state_encoder
-        self.state_decoder = state_decoder
-        self.gen_network = gen_network
-        self.controller = controller
-        self.loss_func = loss_func
-        self._validate_callbacks()
+        self.run_cost = run_cost           # running cost for trajectories
+        self.terminal_cost = terminal_cost # terminal cost for trajectories
+        self.control_cost = control_cost   # control cost for trajectories
+        self.init_gen = init_gen           # initial state generator
+        self.state_encoder = state_encoder # state encoder that is applied to all states
+        self.state_decoder = state_decoder # state decoder that is applied for visualization
+        self.gen_network = gen_network     # generates the neural network (policy or value)
+        self.controller = controller       # controller function that is called at each time step
+        self.loss_func = loss_func         # loss function for the over all learning problem
+        self._validate_callbacks()         # type check the callbacks
+
 
     def _validate_callbacks(self):
-        annotations = get_type_hints(self.__init__)
-        for attr_name, expected_type in annotations.items():
+        hints = get_type_hints(self.__init__)
+        for attr_name, expected_type in hints.items():
             if attr_name == 'return':
                 continue  # Skip return type
 
