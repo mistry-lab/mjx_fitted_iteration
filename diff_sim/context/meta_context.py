@@ -39,7 +39,7 @@ class Callbacks:
             state_decoder: Callable[[jnp.ndarray], jnp.ndarray],
             gen_network: Callable[[int], Network],
             controller: Callable[[jnp.ndarray, jnp.ndarray, Network, Config, mjx.Model, mjx.Data], jnp.ndarray],
-            loss_func: Callable[[PyTree, PyTree, jnp.ndarray, Context], jnp.ndarray]
+            loss_func: Callable[[PyTree, PyTree, jnp.ndarray, Context], tuple[jnp.ndarray, jnp.ndarray]]
     ):
         self.run_cost = run_cost           # running cost for trajectories
         self.terminal_cost = terminal_cost # terminal cost for trajectories

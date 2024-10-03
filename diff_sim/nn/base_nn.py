@@ -40,8 +40,8 @@ r
             Tuple[BasePolicy, state, float]: Updated model, updated state, and loss value.
         """
         params, static = eqx.partition(model, eqx.is_array)
-        loss_value, grads = jax.value_and_grad(ctx.cbs.loss_func)(params, static, x_init, ctx)
+        (loss_value, traj_costs), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(params, static, x_init, ctx)
         updates, state = optim.update(grads, state, model)
         model = eqx.apply_updates(model, updates)
 
-        return model, state, loss_value
+        return model, state, loss_value, traj_costs

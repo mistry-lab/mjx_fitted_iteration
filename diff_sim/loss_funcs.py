@@ -1,11 +1,14 @@
+from typing import Tuple
+
 import jax
 import jax.numpy as jnp
 import equinox as eqx
+from jax import Array
 from jaxtyping import PyTree
 from diff_sim.context.meta_context import Context
 from diff_sim.simulate import controlled_simulate
 
-def loss_fn_policy_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> jnp.ndarray:
+def loss_fn_policy_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
         Loss function for the direct analytical policy optimization problem given deterministic dynamics
         Args:
@@ -23,10 +26,11 @@ def loss_fn_policy_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx:
     model = eqx.combine(params, static)
     _,_,costs,_ = controlled_simulate(x_init, ctx, model)
     costs = jnp.sum(costs, axis=1)
-    return jnp.mean(costs)
+    costs = jnp.mean(costs)
+    return costs, costs
 
 
-def loss_fn_policy_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> jnp.ndarray:
+def loss_fn_policy_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
         Loss function for the direct analytical policy optimization problem given stochastic dynamics.
         ** IF YOUR POLICY IS NOT STOCHASTIC (NO NOISE) OR SAMPLES = 1 THIS WILL BE IDENTICAL TO loss_fn_policy_det **
@@ -47,10 +51,11 @@ def loss_fn_policy_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ct
     costs = costs.reshape(ctx.cfg.batch, ctx.cfg.samples, ctx.cfg.nsteps)
     sum_costs = jnp.sum(costs, axis=-1)
     exp_sum_costs = jnp.mean(sum_costs, axis=-1)
-    return jnp.mean(exp_sum_costs)
+    costs = jnp.mean(exp_sum_costs)
+    return costs, costs
 
 
-def loss_fn_td_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> jnp.ndarray:
+def loss_fn_td_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
         Loss function for the temporal difference policy optimization problem
         Args:
@@ -81,11 +86,12 @@ def loss_fn_td_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Con
     x,_,costs,t = controlled_simulate(x_init, ctx, model)
     B, T, _ = x.shape
     diff, term = v_diff(x,t)
+    traj_costs = jnp.mean(jnp.sum(costs, axis=-1))
     costs = td_cost(diff.reshape(B, T-1), term.reshape(B, 1), costs)
-    return jnp.mean(costs)
+    return jnp.mean(costs), traj_costs
 
 
-def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> jnp.ndarray:
+def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> (jnp.ndarray, jnp.ndarray):
     """
         Loss function for the temporal difference policy optimization problem
         IF YOUR POLICY IS NOT STOCHASTIC (NO NOISE) OR SAMPLES = 1 THIS WILL BE IDENTICAL TO loss_fn_td_det
@@ -123,10 +129,11 @@ def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: C
     values = compute_values(x, t).reshape(ctx.cfg.batch, ctx.cfg.samples, ctx.cfg.nsteps)
     diff, term = stochastic_v_diff(values) #shapes: (B, S, T-1), (B)
     costs  = costs.reshape(ctx.cfg.batch, ctx.cfg.samples, ctx.cfg.nsteps)
+    traj_costs = jnp.mean(jnp.mean(jnp.sum(costs, axis=-1), axis=-1))
     costs = td_cost(diff, term, costs) #shape: (B)
-    return jnp.mean(costs)
+    return jnp.mean(costs), traj_costs
 
-def loss_fn_target_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> jnp.ndarray:
+def loss_fn_target_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> (jnp.ndarray, jnp.ndarray):
     """
         Loss function for the target for fitted value iteration
         Args:
@@ -150,4 +157,5 @@ def loss_fn_target_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx:
 
     model = eqx.combine(params, static)
     x,_,costs =  controlled_simulate(x_init, ctx, model)
-    return jnp.mean(cost(x,costs))
+    traj_costs = jnp.mean(jnp.sum(costs, axis=1))
+    return jnp.mean(cost(x,costs)), traj_costs

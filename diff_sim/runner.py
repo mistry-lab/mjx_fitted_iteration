@@ -22,6 +22,8 @@ if __name__ == '__main__':
         args = parser.parse_args()
         ctx = ctxs[args.task]
 
+        # set the name of the wandb project
+
         # Initialize wandb
         wandb.init(anonymous="allow", mode='offline') if args.wb_project is None else (
             wandb.init(project=args.wb_project, anonymous="allow")
@@ -46,9 +48,10 @@ if __name__ == '__main__':
                 key, xkey, tkey = jax.random.split(key, num = 3)
                 x_inits = ctx.cbs.init_gen(ctx.cfg.batch * ctx.cfg.samples, xkey)
                 key, xkey, tkey = jax.random.split(key, num = 3)
-                net, opt_state, loss_value = net.make_step(optim, net, opt_state, x_inits, ctx)
-                wandb.log({"loss": loss_value})
-                es.set_postfix({"Loss": loss_value})
+                net, opt_state, loss_value, traj_cost = net.make_step(optim, net, opt_state, x_inits, ctx)
+                log_data = {"loss": round(loss_value.item(), 3), "Traj Cost": round(traj_cost.item(), 3)}
+                wandb.log(log_data)
+                es.set_postfix(log_data)
 
                 if e % ctx.cfg.vis == 0 or e == ctx.cfg.epochs - 1:
                     key, xkey, tkey = jax.random.split(key, num = 3)

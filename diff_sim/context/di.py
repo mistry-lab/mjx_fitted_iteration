@@ -44,11 +44,11 @@ def policy(
 
 def run_cost(x: jnp.ndarray) -> jnp.ndarray:
     # x^T Q x
-    return  jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0., 0.])), x))
+    return  jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10, 0.01])), x))
 
 def terminal_cost(x: jnp.ndarray) -> jnp.ndarray:
     # x^T Q_f x
-    return 10*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([25, 100])), x))
+    return 10*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10, 0.01])), x))
 
 def control_cost(x: jnp.ndarray) -> jnp.ndarray:
     # u^T R u
@@ -56,8 +56,8 @@ def control_cost(x: jnp.ndarray) -> jnp.ndarray:
 
 def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
     xinits = jnp.concatenate([
-        jax.random.uniform(key, (total_batch, 1), minval=-1.5, maxval=1.5),
-        jax.random.uniform(key, (total_batch, 1), minval=-.1, maxval=.1)
+        jax.random.uniform(key, (total_batch, 1), minval=-1, maxval=1),
+        jax.random.uniform(key, (total_batch, 1), minval=-.7, maxval=.7)
     ], axis=1).squeeze()
     return xinits
 
