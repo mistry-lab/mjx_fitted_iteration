@@ -4,7 +4,7 @@ from jax import numpy as jnp
 import equinox as eqx
 import mujoco
 from mujoco import mjx
-from diff_sim.loss_funcs import loss_fn_policy_stoch, loss_fn_td_det
+from diff_sim.loss_funcs import loss_fn_policy_stoch
 from diff_sim.context.meta_context import Config, Callbacks, Context
 from diff_sim.nn.base_nn import Network
 
@@ -34,15 +34,7 @@ def policy(
         x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data
 ) -> jnp.ndarray:
     # returns the control action
-    act_id = mx.actuator_trnid[:, 0]
-    M = mjx.full_m(mx, dx)
-    invM = jnp.linalg.inv(M)
-    dvdx = jax.jacrev(net,0)(x, t)
-    G = jnp.vstack([jnp.zeros_like(invM), invM])
-    invR = jnp.linalg.inv(jnp.diag(jnp.array([0.001])))
-    u = (-1/2 * invR @ G.T[act_id, :] @ dvdx.T).flatten()
-    return u
-
+    return net(x, t)
 
 def run_cost(x: jnp.ndarray) -> jnp.ndarray:
     # x^T Q x
@@ -95,6 +87,6 @@ ctx = Context(
         state_decoder= coder,
         gen_network=gen_network,
         controller=policy,
-        loss_func=loss_fn_td_det
+        loss_func=loss_fn_policy_stoch
     )
 )

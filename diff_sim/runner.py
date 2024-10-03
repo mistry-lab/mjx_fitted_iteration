@@ -24,7 +24,7 @@ if __name__ == '__main__':
 
         # Initialize wandb
         wandb.init(anonymous="allow", mode='offline') if args.wb_project is None else (
-            wandb.init(project=args.wb_project, anonymous="allow", mode='offline')
+            wandb.init(project=args.wb_project, anonymous="allow")
         )
 
         # initial keys for random number generation these will be split for each iteration
