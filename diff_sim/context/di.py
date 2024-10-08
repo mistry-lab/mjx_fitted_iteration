@@ -4,7 +4,7 @@ from jax import numpy as jnp
 import equinox as eqx
 import mujoco
 from mujoco import mjx
-from diff_sim.loss_funcs import loss_fn_policy_stoch, loss_fn_td_stoch, loss_fn_td_det
+from diff_sim.loss_funcs import loss_fn_policy_stoch, loss_fn_td_stoch, loss_fn_td_det, loss_fn_policy_det
 from diff_sim.context.meta_context import Config, Callbacks, Context
 from diff_sim.nn.base_nn import Network
 
@@ -81,7 +81,7 @@ ctx = Context(
         nsteps=100,
         epochs=1000,
         batch=64,
-        samples=2,
+        samples=1,
         vis=10,
         dt=0.01,
         path=model_path,

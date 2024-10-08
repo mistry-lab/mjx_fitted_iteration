@@ -39,8 +39,7 @@ if __name__ == '__main__':
             opt_state = optim.init(eqx.filter(net, eqx.is_array))
 
             # run through the epochs and log the loss
-            es = trange(ctx.cfg.epochs)
-            for e in es:
+            for e in es := trange(ctx.cfg.epochs):
                 key, xkey, tkey = jax.random.split(key, num = 3)
                 x_inits = ctx.cbs.init_gen(ctx.cfg.batch * ctx.cfg.samples, xkey)
                 net, opt_state, loss_value, traj_cost = net.make_step(optim, net, opt_state, x_inits, ctx)
