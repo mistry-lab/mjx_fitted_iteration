@@ -4,17 +4,14 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-mujoco = "*"
-mujoco-mjx = "*"
-equinox = "*"
-optax = "*"
+mujoco = "3.2.3"
+mujoco-mjx = "3.2.3"
+equinox = "0.11.7"
+optax = "0.2.3"
 pyaml = "*"
 wandb = "*"
 ipython = "*"
-flax = "*"
 matplotlib = "*"
-nnx = "*"
-clu = "*"
 diff-sim = {file = ".", editable = true}
 
 [dev-packages]
