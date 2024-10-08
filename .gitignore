@@ -2,3 +2,4 @@
 wandb/
 Pipfile.lock
 diff_sim.egg-info/
+models/

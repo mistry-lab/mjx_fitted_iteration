@@ -1,5 +1,4 @@
 import argparse
-import time
 import wandb
 import mujoco
 from mujoco import viewer
