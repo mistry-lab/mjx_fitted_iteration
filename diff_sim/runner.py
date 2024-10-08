@@ -51,9 +51,9 @@ if __name__ == '__main__':
 
                 if e % ctx.cfg.vis == 0 or e == ctx.cfg.epochs - 1:
                     visualise_policy(data, model, viewer, ctx, net, key)
-
-    except KeyboardInterrupt:
+        
         save_model(net, args.task)
+    except KeyboardInterrupt:
         print("Exit wandb")
         wandb.finish()
 
