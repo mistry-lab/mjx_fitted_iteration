@@ -18,6 +18,9 @@ if __name__ == '__main__':
         parser = argparse.ArgumentParser()
         parser.add_argument("--task", help="task name", default="double_integrator")
         parser.add_argument("--wb_project", help="wandb project name", default="not_named")
+        parser.add_argument(
+            "--gpu_id", help="Use jax.devices() and nvida-smi to select the least busy GPU", required=True
+        )
         args = parser.parse_args()
         ctx = ctxs[args.task]
 
@@ -35,7 +38,7 @@ if __name__ == '__main__':
         data = mujoco.MjData(model)
 
         # start the training loop in jax default device and launch a passive viewer
-        with viewer.launch_passive(model, data) as viewer:
+        with (jax.default_device(jax.devices()[args.gpu_id])) and viewer.launch_passive(model, data) as viewer:
             net, optim = ctx.cbs.gen_network(ctx.cfg.seed), optax.adamw(ctx.cfg.lr)
             opt_state = optim.init(eqx.filter(net, eqx.is_array))
 
