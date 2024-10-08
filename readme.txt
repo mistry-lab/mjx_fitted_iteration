@@ -12,4 +12,5 @@ If absolute import error occurs, run the following command:
 
 On MacOS mujoco can not handle launch passive, you need to use mjpython instead of python which is bundled with mujoco install for example
 
-- mjpython runner.py instead of python/python3 runner
+- mjpython runner.py instead of python/python3 runner.py
+
