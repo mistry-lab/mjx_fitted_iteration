@@ -34,14 +34,14 @@ def policy(
 ) -> jnp.ndarray:
     # under this policy the cost function is quite important the cost that works is:
     # Q = diag([0, 0]) or Q = diag([10, 0.01]) and R = diag([0.01]) and QF = diag([10, 0.01])
-    act_id = mx.actuator_trnid[:, 0]
-    M = mjx.full_m(mx, dx)
-    invM = jnp.linalg.inv(M)
-    dvdx = jax.jacrev(net,0)(x, t)
-    G = jnp.vstack([jnp.zeros_like(invM), invM])
-    invR = jnp.linalg.inv(jnp.diag(jnp.array([0.01])))
-    u = (-1/2 * invR @ G.T[act_id, :] @ dvdx.T).flatten()
-    return u
+    # act_id = mx.actuator_trnid[:, 0]
+    # M = mjx.full_m(mx, dx)
+    # invM = jnp.linalg.inv(M)
+    # dvdx = jax.jacrev(net,0)(x, t)
+    # G = jnp.vstack([jnp.zeros_like(invM), invM])
+    # invR = jnp.linalg.inv(jnp.diag(jnp.array([0.01])))
+    # u = (-1/2 * invR @ G.T[act_id, :] @ dvdx.T).flatten()
+    return net(x, t)
 
 def run_cost(x: jnp.ndarray) -> jnp.ndarray:
     # x^T Q x
@@ -77,12 +77,13 @@ def gen_network(seed: int) -> Network:
 ctx = Context(
     Config(
         lr=4e-3,
+        num_gpu=1,
         seed=0,
         nsteps=100,
         epochs=1000,
         batch=64,
         samples=1,
-        vis=10,
+        eval=10,
         dt=0.01,
         path=model_path,
         mx=mjx.put_model(mujoco.MjModel.from_xml_path(model_path)),
@@ -96,6 +97,6 @@ ctx = Context(
         state_decoder=state_decoder,
         gen_network=gen_network,
         controller=policy,
-        loss_func=loss_fn_td_stoch
+        loss_func=loss_fn_policy_det
     )
 )

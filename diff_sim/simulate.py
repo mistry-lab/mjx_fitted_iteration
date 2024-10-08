@@ -32,7 +32,7 @@ def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network):
         dx = mjx.step(mx, dx) # Dynamics function
         x = ctx.cbs.state_encoder(jnp.concatenate([dx.qpos, dx.qvel], axis=0))
         return dx, jnp.concatenate([x, dx.ctrl, cost, t], axis=0)
-    
+
     @jax.vmap
     def rollout(x_init):
         dx = set_init(x_init)

@@ -69,12 +69,13 @@ def gen_network(seed: int) -> Network:
 ctx = Context(
     cfg=Config(
         lr=4e-3,
+        num_gpu=1,
         seed=0,
         nsteps=125,
         epochs=400,
         batch=1000,
         samples=1,
-        vis=10,
+        eval=10,
         dt=0.01,
         path=model_path,
         mx=mjx.put_model(mujoco.MjModel.from_xml_path(model_path))),

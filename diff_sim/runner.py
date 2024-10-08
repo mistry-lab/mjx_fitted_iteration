@@ -36,7 +36,7 @@ if __name__ == '__main__':
         data = mujoco.MjData(model)
 
         # start the training loop in jax default device and launch a passive viewer
-        with (jax.default_device(jax.devices()[0])) and viewer.launch_passive(model, data) as viewer:
+        with viewer.launch_passive(model, data) as viewer:
             net, optim = ctx.cbs.gen_network(ctx.cfg.seed), optax.adamw(ctx.cfg.lr)
             opt_state = optim.init(eqx.filter(net, eqx.is_array))
 
@@ -49,11 +49,11 @@ if __name__ == '__main__':
                 wandb.log(log_data)
                 es.set_postfix(log_data)
 
-                if e % ctx.cfg.vis == 0 or e == ctx.cfg.epochs - 1:
+                if e % ctx.cfg.eval == 0 or e == ctx.cfg.epochs - 1:
                     visualise_policy(data, model, viewer, ctx, net, key)
+                    save_model(net, f"{args.task}_checkpt_{e}_.pkl")
 
     except KeyboardInterrupt:
-        save_model(net, args.task)
         print("Exit wandb")
         wandb.finish()
 
