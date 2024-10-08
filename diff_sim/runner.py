@@ -19,7 +19,8 @@ if __name__ == '__main__':
         parser.add_argument("--task", help="task name", default="double_integrator")
         parser.add_argument("--wb_project", help="wandb project name", default="not_named")
         parser.add_argument(
-            "--gpu_id", help="Use jax.devices() and nvida-smi to select the least busy GPU", required=True
+            "--gpu_id", required=True, type=int,
+            help="Use jax.devices() and nvidia-smi to select the least busy GPU"
         )
         args = parser.parse_args()
         ctx = ctxs[args.task]
@@ -53,10 +54,13 @@ if __name__ == '__main__':
 
                 if e % ctx.cfg.eval == 0 or e == ctx.cfg.epochs - 1:
                     visualise_policy(data, model, viewer, ctx, net, key)
-                    save_model(net, f"{args.task}_checkpoint_{e}.pkl")
+                    name = f"{args.task}_checkpoint_{e}"
+                    save_model(net, args.task, name)
+                    log_data["latest_model"] = name
+                    es.set_postfix(log_data)
 
     except KeyboardInterrupt:
-        print("Exit wandb")
+        print("Exiting wandb...")
         wandb.finish()
 
 
