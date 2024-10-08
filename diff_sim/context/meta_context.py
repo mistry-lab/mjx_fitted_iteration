@@ -14,7 +14,7 @@ from diff_sim.nn.base_nn import Network
 
 @partial(jax.tree_util.register_dataclass,
          data_fields=['horizon', 'mx'],
-         meta_fields=['lr', 'seed', 'nsteps', 'epochs', 'batch', 'samples', 'vis', 'dt', 'path'])
+         meta_fields=['lr', 'seed', 'nsteps', 'epochs', 'batch', 'samples', 'eval', 'dt', 'path'])
 @dataclass(frozen=True)
 class Config:
     lr: float     # learning rate
@@ -23,7 +23,7 @@ class Config:
     epochs: int   # training epochs
     batch: int    # batch size (number simulations)
     samples: int  # number of simulations per initial state
-    vis: int      # visualization frequency
+    eval: int     # visualization and saving checkpoints frequency
     dt: float     # simulation time step
     path: str     # path to the mujoco model
     mx: mjx.Model # mujoco model

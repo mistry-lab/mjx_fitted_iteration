@@ -4,7 +4,7 @@ import os
 
 def save_model(net: eqx.Module, task_name: str):
     """
-    Save the model to the disk
+    Save the model to the disk with filename as task_name + current time under the models directory.
     :param net: Equinox module
     :param task_name: str
 
