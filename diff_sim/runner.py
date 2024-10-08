@@ -1,4 +1,5 @@
 import argparse
+import time
 import wandb
 import mujoco
 from mujoco import viewer
@@ -8,7 +9,8 @@ import jax.debug
 from jax import config
 from diff_sim.context.tasks import ctxs
 from diff_sim.utils.tqdm import trange
-from diff_sim.utils.mj_vis import visualise_policy
+from diff_sim.utils.mj import visualise_policy
+from diff_sim.utils.generic import save_model
 
 config.update('jax_default_matmul_precision', jax.lax.Precision.HIGH)
 
@@ -51,5 +53,9 @@ if __name__ == '__main__':
                     visualise_policy(data, model, viewer, ctx, net, key)
 
     except KeyboardInterrupt:
+        save_model(net, args.task)
         print("Exit wandb")
         wandb.finish()
+
+
+ 
