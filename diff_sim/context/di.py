@@ -26,7 +26,7 @@ class Policy(Network):
         x = jnp.concatenate([x, t], axis=-1)
         for layer in self.layers[:-1]:
             x = self.act(layer(x))
-        return self.layers[-1](x)
+        return self.layers[-1](x).squeeze()
 
 
 def policy(

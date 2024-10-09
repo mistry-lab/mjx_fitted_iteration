@@ -109,13 +109,13 @@ def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: C
         return jax.vmap(model)(x, t)
 
     @jax.vmap
-    def stochastic_v_diff(values):
+    def v_diff_stoch(values):
         v_average = jnp.mean(values, axis=0, keepdims=True)
         diff = values[:, 0:-1] - v_average[:, 1:]
         return diff, v_average[:, -1].flatten()
 
     @jax.vmap
-    def td_cost(diff, term, cost):
+    def td_cost_stoch(diff, term, cost):
         v_diff_cost = diff - cost[:, :-1]
         v_term_cost = term - jnp.mean(cost[:, -1])
         return jnp.mean(jnp.sum(jnp.square(v_diff_cost), axis=-1)) + jnp.square(v_term_cost)
@@ -123,10 +123,10 @@ def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: C
     model = eqx.combine(params, static)
     x, _, costs, t = controlled_simulate(x_init, ctx, model)
     values = compute_values(x, t).reshape(ctx.cfg.batch, ctx.cfg.samples, ctx.cfg.nsteps)
-    diff, term = stochastic_v_diff(values) #shapes: (B, S, T-1), (B)
+    diff, term = v_diff_stoch(values) # shapes: (B, S, T-1), (B)
     costs  = costs.reshape(ctx.cfg.batch, ctx.cfg.samples, ctx.cfg.nsteps)
     traj_costs = jnp.mean(jnp.mean(jnp.sum(costs, axis=-1), axis=-1))
-    costs = td_cost(diff, term, costs) #shape: (B)
+    costs = td_cost_stoch(diff, term, costs)
     return jnp.mean(costs), traj_costs
 
 def loss_fn_target_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> tuple[jnp.ndarray, jnp.ndarray]:
