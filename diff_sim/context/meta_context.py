@@ -11,13 +11,13 @@ import jax.tree_util
 from jaxtyping import PyTree
 from diff_sim.nn.base_nn import Network
 
-
 @partial(jax.tree_util.register_dataclass,
          data_fields=['horizon', 'mx'],
          meta_fields=['lr', 'seed', 'nsteps', 'epochs', 'batch', 'samples', 'eval', 'dt', 'path'])
 @dataclass(frozen=True)
 class Config:
     lr: float     # learning rate
+    num_gpu: int  # number of devices
     seed: int     # random seed
     nsteps: int   # simulation steps
     epochs: int   # training epochs
@@ -38,8 +38,8 @@ class Callbacks:
             state_encoder: Callable[[jnp.ndarray], jnp.ndarray],
             state_decoder: Callable[[jnp.ndarray], jnp.ndarray],
             gen_network: Callable[[int], Network],
-            controller: Callable[[jnp.ndarray, jnp.ndarray, Network, Config, mjx.Model, mjx.Data], jnp.ndarray],
-            loss_func: Callable[[PyTree, PyTree, jnp.ndarray, Context], tuple[jnp.ndarray, jnp.ndarray]]
+            controller: Callable[[jnp.ndarray, jnp.ndarray, Network, Config, mjx.Model, mjx.Data, jnp.ndarray], jnp.ndarray],
+            loss_func: Callable[[PyTree, PyTree, jnp.ndarray, Context, jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray]]
     ):
         self.run_cost = run_cost           # running cost for trajectories
         self.terminal_cost = terminal_cost # terminal cost for trajectories
@@ -47,7 +47,7 @@ class Callbacks:
         self.init_gen = init_gen           # initial state generator
         self.state_encoder = state_encoder # state encoder that is applied to all states
         self.state_decoder = state_decoder # state decoder that is applied for visualization
-        self.gen_network = gen_network     # generates the neural network (policy or value)
+        self.gen_network = gen_network     # generates the neural network (policy or value). This can be a checkpoint
         self.controller = controller       # controller function that is called at each time step
         self.loss_func = loss_func         # loss function for the over all learning problem
         self._validate_callbacks()         # type check the callbacks
@@ -107,6 +107,9 @@ class Context:
         self.cfg = cfg
         self.cbs = cbs
         assert jnp.isclose(cfg.dt, cfg.mx.opt.timestep, atol=1e-6)
+        assert cfg.num_gpu <= jax.device_count()
+        assert (cfg.batch * cfg.samples) % cfg.num_gpu == 0
+
 
 
 

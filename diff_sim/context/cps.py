@@ -31,7 +31,7 @@ class Policy(Network):
 
 
 def policy(
-        x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data
+        x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray
 ) -> jnp.ndarray:
     # returns the control action
     return net(x, t)
@@ -69,6 +69,7 @@ def gen_network(seed: int) -> Network:
 ctx = Context(
     cfg=Config(
         lr=4e-3,
+        num_gpu=1,
         seed=0,
         nsteps=125,
         epochs=400,
