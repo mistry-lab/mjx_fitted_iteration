@@ -18,4 +18,3 @@ def save_model(net: eqx.Module, directory: str, task_name: str):
     os.makedirs(directory, exist_ok=True)
     date_name = task_name + "_" + time.strftime("%Y%m%d-%H%M%S")
     eqx.tree_serialise_leaves(f"./{directory}/{date_name}.eqx", net)
-    print(f"Model saved at {directory}/{date_name}.eqx")
