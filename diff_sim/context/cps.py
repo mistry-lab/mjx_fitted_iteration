@@ -31,7 +31,7 @@ class Policy(Network):
 
 
 def policy(
-        x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data
+        x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray
 ) -> jnp.ndarray:
     # returns the control action
     return net(x, t)

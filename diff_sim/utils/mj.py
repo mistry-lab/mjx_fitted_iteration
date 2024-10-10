@@ -11,9 +11,9 @@ def visualise_policy(
         d: mujoco.MjData, m: mujoco.MjModel, viewer: mujoco.viewer.Handle,
         ctx: Context, net: Network, key: jax.random.PRNGKey
 ):
-    key, xkey, tkey = jax.random.split(key, num=3)
+    key, xkey, tkey, user_key = jax.random.split(key, num=4)
     x_inits = ctx.cbs.init_gen(2, xkey)
-    x, _, _, _ = controlled_simulate(x_inits, ctx, net)
+    x, _, _, _ = controlled_simulate(x_inits, ctx, net, key)
     x = jax.vmap(jax.vmap(ctx.cbs.state_decoder))(x)
     x = np.array(x.squeeze())
     for b in range(x.shape[0]):

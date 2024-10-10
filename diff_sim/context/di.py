@@ -30,7 +30,7 @@ class Policy(Network):
 
 
 def policy(
-        x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data
+        x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
 ) -> jnp.ndarray:
     # under this policy the cost function is quite important the cost that works is:
     # Q = diag([0, 0]) or Q = diag([10, 0.01]) and R = diag([0.01]) and QF = diag([10, 0.01])

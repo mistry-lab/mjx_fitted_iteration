@@ -41,9 +41,9 @@ if __name__ == '__main__':
 
             # run through the epochs and log the loss
             for e in (es := trange(ctx.cfg.epochs)):
-                key, xkey, tkey = jax.random.split(key, num = 3)
+                key, xkey, tkey, user_key = jax.random.split(key, num = 4)
                 x_inits = ctx.cbs.init_gen(ctx.cfg.batch * ctx.cfg.samples, xkey)
-                net, opt_state, loss_value, traj_cost = net.make_step(optim, net, opt_state, x_inits, ctx)
+                net, opt_state, loss_value, traj_cost = net.make_step(optim, net, opt_state, x_inits, ctx, user_key)
                 log_data = {"loss": round(loss_value.item(), 3), "Traj Cost": round(traj_cost.item(), 3)}
                 wandb.log(log_data)
                 es.set_postfix(log_data)

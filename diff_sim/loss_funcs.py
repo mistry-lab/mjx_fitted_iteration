@@ -5,7 +5,7 @@ from jaxtyping import PyTree
 from diff_sim.context.meta_context import Context
 from diff_sim.simulate import controlled_simulate
 
-def loss_fn_policy_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> tuple[jnp.ndarray, jnp.ndarray]:
+def loss_fn_policy_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context, user_key: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
         Loss function for the direct analytical policy optimization problem given deterministic dynamics
         Args:
@@ -13,6 +13,7 @@ def loss_fn_policy_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx:
             static: PyTree, static parameters
             x_init: jnp.ndarray, initial state
             ctx: Context, context object
+            user_key: jnp.ndarray, random user_key for sub calls
         Returns:
             jnp.ndarray, loss value
 
@@ -27,7 +28,7 @@ def loss_fn_policy_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx:
     return costs, costs
 
 
-def loss_fn_policy_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> tuple[jnp.ndarray, jnp.ndarray]:
+def loss_fn_policy_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context, user_key: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
         Loss function for the direct analytical policy optimization problem given stochastic dynamics.
         ** IF YOUR POLICY IS NOT STOCHASTIC (NO NOISE) OR SAMPLES = 1 THIS WILL BE IDENTICAL TO loss_fn_policy_det **
@@ -36,6 +37,7 @@ def loss_fn_policy_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ct
             static: PyTree, static parameters
             x_init: jnp.ndarray, initial state
             ctx: Context, context object
+            user_key: jnp.ndarray, random user_key for sub calls
         Returns:
             jnp.ndarray, loss value
 
@@ -44,7 +46,7 @@ def loss_fn_policy_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ct
             loss = 1/B * sum_{b=1}^{B} E[sum_{t=1}^{T} cost(x_{b,t}, u_{b,t})]
     """
     model = eqx.combine(params, static)
-    _,_,costs,_ = controlled_simulate(x_init, ctx, model)
+    _,_,costs,_ = controlled_simulate(x_init, ctx, model, user_key)
     costs = costs.reshape(ctx.cfg.batch, ctx.cfg.samples, ctx.cfg.nsteps)
     sum_costs = jnp.sum(costs, axis=-1)
     exp_sum_costs = jnp.mean(sum_costs, axis=-1)
@@ -52,7 +54,7 @@ def loss_fn_policy_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ct
     return costs, costs
 
 
-def loss_fn_td_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> tuple[jnp.ndarray, jnp.ndarray]:
+def loss_fn_td_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context, user_key: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
         Loss function for the temporal difference value/policy optimization problem
         Args:
@@ -60,6 +62,7 @@ def loss_fn_td_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Con
             static: PyTree, static parameters
             x_init: jnp.ndarray, initial state
             ctx: Context, context object
+            user_key: jnp.ndarray, random user_key for sub calls
         Returns:
             jnp.ndarray, loss value
 
@@ -80,7 +83,7 @@ def loss_fn_td_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Con
         return jnp.sum(jnp.square(v_diff_cost)) + jnp.square(v_term_cost)
     
     model = eqx.combine(params, static)
-    x,_,costs,t = controlled_simulate(x_init, ctx, model)
+    x,_,costs,t = controlled_simulate(x_init, ctx, model, user_key)
     B, T, _ = x.shape
     diff, term = v_diff(x,t)
     traj_costs = jnp.mean(jnp.sum(costs, axis=-1))
@@ -88,7 +91,7 @@ def loss_fn_td_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Con
     return jnp.mean(costs), traj_costs
 
 
-def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> tuple[jnp.ndarray, jnp.ndarray]:
+def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context, user_key: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
         Loss function for the temporal difference value/policy optimization problem
         IF YOUR POLICY IS NOT STOCHASTIC (NO NOISE) OR SAMPLES = 1 THIS WILL BE IDENTICAL TO loss_fn_td_det
@@ -97,7 +100,8 @@ def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: C
             static: PyTree, static parameters
             x_init: jnp.ndarray, initial state
             ctx: Context, context object
-        Returns:
+            user_key: jnp.ndarray, random user_key for sub calls
+        Return
             jnp.ndarray, loss value
 
         Notes:
@@ -121,7 +125,7 @@ def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: C
         return jnp.mean(jnp.sum(jnp.square(v_diff_cost), axis=-1)) + jnp.square(v_term_cost)
 
     model = eqx.combine(params, static)
-    x, _, costs, t = controlled_simulate(x_init, ctx, model)
+    x, _, costs, t = controlled_simulate(x_init, ctx, model, user_key)
     values = compute_values(x, t).reshape(ctx.cfg.batch, ctx.cfg.samples, ctx.cfg.nsteps)
     diff, term = stochastic_v_diff(values) #shapes: (B, S, T-1), (B)
     costs  = costs.reshape(ctx.cfg.batch, ctx.cfg.samples, ctx.cfg.nsteps)
@@ -129,7 +133,7 @@ def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: C
     costs = td_cost(diff, term, costs) #shape: (B)
     return jnp.mean(costs), traj_costs
 
-def loss_fn_target_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context) -> tuple[jnp.ndarray, jnp.ndarray]:
+def loss_fn_target_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context, user_key) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
         Loss function for the target for fitted value iteration to learn value/policy
         Args:
@@ -137,6 +141,7 @@ def loss_fn_target_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx:
             static: PyTree, static parameters
             x_init: jnp.ndarray, initial state
             ctx: Context, context object
+            user_key: jnp.ndarray, random user_key for sub calls
         Returns:
             jnp.ndarray, loss value
 
@@ -152,6 +157,6 @@ def loss_fn_target_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx:
         return jnp.sum(jnp.square(pred - targets))
 
     model = eqx.combine(params, static)
-    x,_,costs =  controlled_simulate(x_init, ctx, model)
+    x,_,costs =  controlled_simulate(x_init, ctx, model, user_key)
     traj_costs = jnp.mean(jnp.sum(costs, axis=1))
     return jnp.mean(cost(x,costs)), traj_costs

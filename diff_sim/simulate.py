@@ -6,7 +6,7 @@ from diff_sim.context.meta_context import Context
 from diff_sim.nn.base_nn import Network
 
 @eqx.filter_jit
-def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network):
+def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network, key: jnp.ndarray):
     mx = ctx.cfg.mx
 
     def cost_fn(x, u):
@@ -25,7 +25,7 @@ def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network):
         dx = carry
         x = ctx.cbs.state_encoder(jnp.concatenate([dx.qpos, dx.qvel], axis=0))
         t = jnp.expand_dims(dx.time, axis=0)
-        u = ctx.cbs.controller(x,t,net,ctx.cfg,mx,dx)
+        u = ctx.cbs.controller(x, t, net, ctx.cfg, mx, dx, key)
         cost = cost_fn(x, u)
         ctrl = dx.ctrl.at[:].set(u)
         dx = dx.replace(ctrl=ctrl)

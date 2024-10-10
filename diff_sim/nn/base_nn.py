@@ -25,7 +25,7 @@ class Network(eqx.Module, ABC):
 
     @staticmethod
     @eqx.filter_jit
-    def make_step(optim, model, state, x_init, ctx):
+    def make_step(optim, model, state, x_init, ctx, user_key):
         params, static = eqx.partition(model, eqx.is_array)
 
         # Reshape x_init to have leading dimension equal to the number of GPUs
@@ -35,8 +35,9 @@ class Network(eqx.Module, ABC):
         # Define the function to be pmapped
         def per_device_loss_and_grad(params, static, x_init, ctx):
             # Compute per-device loss and gradient
-            (loss_value, traj_costs), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(params, static,
-                                                                                                  x_init, ctx)
+            (loss_value, traj_costs), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(
+                params, static, x_init, ctx, user_key
+            )
             # Average loss and gradients across devices
             grads = jax.lax.pmean(grads, axis_name='devices')
             return (loss_value, traj_costs), grads
