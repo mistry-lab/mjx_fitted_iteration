@@ -26,7 +26,7 @@ class Policy(Network):
         x = jnp.concatenate([x, t], axis=-1)
         for layer in self.layers[:-1]:
             x = self.act(layer(x))
-        return self.layers[-1](x)
+        return self.layers[-1](x).squeeze()
 
 
 def policy(
@@ -34,14 +34,14 @@ def policy(
 ) -> jnp.ndarray:
     # under this policy the cost function is quite important the cost that works is:
     # Q = diag([0, 0]) or Q = diag([10, 0.01]) and R = diag([0.01]) and QF = diag([10, 0.01])
-    # act_id = mx.actuator_trnid[:, 0]
-    # M = mjx.full_m(mx, dx)
-    # invM = jnp.linalg.inv(M)
-    # dvdx = jax.jacrev(net,0)(x, t)
-    # G = jnp.vstack([jnp.zeros_like(invM), invM])
-    # invR = jnp.linalg.inv(jnp.diag(jnp.array([0.01])))
-    # u = (-1/2 * invR @ G.T[act_id, :] @ dvdx.T).flatten()
-    return net(x, t)
+    act_id = mx.actuator_trnid[:, 0]
+    M = mjx.full_m(mx, dx)
+    invM = jnp.linalg.inv(M)
+    dvdx = jax.jacrev(net,0)(x, t)
+    G = jnp.vstack([jnp.zeros_like(invM), invM])
+    invR = jnp.linalg.inv(jnp.diag(jnp.array([0.01])))
+    u = (-1/2 * invR @ G.T[act_id, :] @ dvdx.T).flatten()
+    return u
 
 def run_cost(x: jnp.ndarray) -> jnp.ndarray:
     # x^T Q x
@@ -97,6 +97,6 @@ ctx = Context(
         state_decoder=state_decoder,
         gen_network=gen_network,
         controller=policy,
-        loss_func=loss_fn_policy_det
+        loss_func=loss_fn_td_stoch
     )
 )
