@@ -12,8 +12,8 @@ from jaxtyping import PyTree
 from diff_sim.nn.base_nn import Network
 
 @partial(jax.tree_util.register_dataclass,
-         data_fields=['horizon', 'mx'],
-         meta_fields=['lr', 'seed', 'nsteps', 'epochs', 'batch', 'samples', 'eval', 'dt', 'path'])
+         data_fields=['mx'],
+         meta_fields=['lr', 'num_gpu', 'seed', 'nsteps', 'epochs', 'batch', 'samples', 'eval', 'dt', 'path'])
 @dataclass(frozen=True)
 class Config:
     lr: float     # learning rate
