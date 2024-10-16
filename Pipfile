@@ -13,6 +13,7 @@ matplotlib = "*"
 diff-sim = {file = ".", editable = true}
 mujoco = "3.2.3"
 jax = "==0.4.33"
+mujoco-mjx = "*"
 
 [dev-packages]
 
