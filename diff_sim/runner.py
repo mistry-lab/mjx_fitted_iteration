@@ -12,7 +12,7 @@ from diff_sim.utils.tqdm import trange
 from diff_sim.utils.mj import visualise_policy
 from diff_sim.utils.generic import save_model
 
-config.update('jax_default_matmul_precision', jax.lax.Precision.HIGH)
+config.update('jax_default_matmul_precision', 'high')
 
 if __name__ == '__main__':
     try:
