@@ -32,9 +32,11 @@ class Policy(Network):
 
 def policy(
         x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray
-) -> jnp.ndarray:
-    # returns the control action
-    return net(x, t)
+) -> tuple[mjx.Data, jnp.ndarray]:
+    # returns the updated data and the control
+    u = net(x, t)
+    dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
+    return dx, u
 
 def run_cost(x: jnp.ndarray) -> jnp.ndarray:
     # x^T Q x

@@ -31,7 +31,7 @@ class Policy(Network):
 
 def policy(
         x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
-) -> jnp.ndarray:
+) -> tuple[mjx.Data, jnp.ndarray]:
     # under this policy the cost function is quite important the cost that works is:
     # Q = diag([0, 0]) or Q = diag([10, 0.01]) and R = diag([0.01]) and QF = diag([10, 0.01])
     act_id = mx.actuator_trnid[:, 0]
@@ -41,7 +41,9 @@ def policy(
     G = jnp.vstack([jnp.zeros_like(invM), invM])
     invR = jnp.linalg.inv(jnp.diag(jnp.array([0.01])))
     u = (-1/2 * invR @ G.T[act_id, :] @ dvdx.T).flatten()
-    return u
+    noisy_u = u + 10 * jax.random.normal(policy_key, u.shape)
+    dx = dx.replace(ctrl=dx.ctrl.at[:].set(noisy_u))
+    return dx, noisy_u
 
 def run_cost(x: jnp.ndarray) -> jnp.ndarray:
     # x^T Q x

@@ -32,8 +32,10 @@ class Policy(Network):
 
 def policy(
         x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
-) -> jnp.ndarray:
-    return net(x, t) * 0
+) -> tuple[mjx.Data, jnp.ndarray]:
+    u = net(x, t)
+    dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
+    return dx, u
 
 
 def run_cost(x: jnp.ndarray) -> jnp.ndarray:
@@ -117,7 +119,7 @@ ctx = Context(
         batch=2,
         samples=1,
         eval=10,
-        dt=0.01,
+        dt=0.006,
         path=model_path,
         mx=mjx.put_model(mujoco.MjModel.from_xml_path(model_path)),
     ),

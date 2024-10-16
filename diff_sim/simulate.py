@@ -22,22 +22,21 @@ def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network, key: jn
         return mjx.step(mx, dx)
 
     def step(carry, _):
-        dx = carry
+        dx, key = carry
+        key, subkey = jax.random.split(key)
         x = ctx.cbs.state_encoder(jnp.concatenate([dx.qpos, dx.qvel], axis=0))
         t = jnp.expand_dims(dx.time, axis=0)
-        u = ctx.cbs.controller(x, t, net, ctx.cfg, mx, dx, key)
+        dx, u = ctx.cbs.controller(x, t, net, ctx.cfg, mx, dx, subkey)
         cost = cost_fn(x, u)
-        ctrl = dx.ctrl.at[:].set(u)
-        dx = dx.replace(ctrl=ctrl)
         dx = mjx.step(mx, dx) # Dynamics function
         x = ctx.cbs.state_encoder(jnp.concatenate([dx.qpos, dx.qvel], axis=0))
-        return dx, jnp.concatenate([x, dx.ctrl, cost, t], axis=0)
+        return (dx, key), jnp.concatenate([x, dx.ctrl, cost, t], axis=0)
 
     @jax.vmap
     def rollout(x_init):
         dx = set_init(x_init)
         x_init = ctx.cbs.state_encoder(x_init)
-        _, res = jax.lax.scan(step, dx, None, length=ctx.cfg.nsteps-1)
+        _, res = jax.lax.scan(step, (dx, key), None, length=ctx.cfg.nsteps-1)
         x, u, costs, ts = res[...,:-mx.nu-2], res[...,-mx.nu-2:-2], res[...,-2], res[...,-1]
         x = jnp.concatenate([x_init.reshape(1,-1), x], axis=0)
         tcost = ctx.cbs.terminal_cost(x[-1]) # Terminal cost
