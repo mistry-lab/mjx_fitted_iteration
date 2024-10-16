@@ -41,10 +41,12 @@ if __name__ == '__main__':
         data = mujoco.MjData(model)
         viewer_context = contextlib.nullcontext() if args.headless else viewer.launch_passive(model, data)
 
+
         # Start the training loop in JAX default device
         with (jax.default_device(jax.devices()[args.gpu_id])), viewer_context as viewer:
             net, optim = ctx.cbs.gen_network(ctx.cfg.seed), optax.adamw(ctx.cfg.lr)
             opt_state = optim.init(eqx.filter(net, eqx.is_array))
+            make_step = net.make_step_multi_gpu if ctx.cfg.num_gpu > 1 else net.make_step
 
             # Run through the epochs and log the loss
             for e in (es := trange(ctx.cfg.epochs)):
