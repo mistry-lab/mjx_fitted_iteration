@@ -21,9 +21,13 @@ def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network, key: jn
         dx = dx.replace(qpos=qpos, qvel=qvel)
         return mjx.step(mx, dx)
 
+    # TODO: make cost function take mx, dx and return cost
+    # TODO: Remove the first encoding of state. If user needs encoded state they should do it in controller
+    # TODO: state encoder mx, dx and returns x
     def step(carry, _):
         dx, key = carry
         key, subkey = jax.random.split(key)
+        # this first decoder should be removed
         x = ctx.cbs.state_encoder(jnp.concatenate([dx.qpos, dx.qvel], axis=0))
         t = jnp.expand_dims(dx.time, axis=0)
         dx, u = ctx.cbs.controller(x, t, net, ctx.cfg, mx, dx, subkey)

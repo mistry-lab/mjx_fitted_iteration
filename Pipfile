@@ -4,16 +4,16 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+jax = {version = "0.4.33", extras = ["cuda12"]}
 equinox = "0.11.7"
 optax = "0.2.3"
+mujoco = "3.2.3"
+mujoco-mjx = "*"
 pyaml = "*"
 wandb = "*"
 ipython = "*"
 matplotlib = "*"
 diff-sim = {file = ".", editable = true}
-mujoco = "3.2.3"
-jax = "==0.4.33"
-mujoco-mjx = "*"
 
 [dev-packages]
 
