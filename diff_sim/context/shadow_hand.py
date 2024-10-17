@@ -71,7 +71,7 @@ def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
     # goal_quat = jnp.tile(jnp.array([1., 0.0, 0., 0.]), (total_batch, 1))
 
     # 2. Fixed values for object_pos, object_vel, object_ang_vel, goal_ang_vel
-    object_pos = jnp.array([0.3, 0.0, 0.1])  # Shape (3,)
+    object_pos = jnp.array([0.3, 0.0, 0.055])  # Shape (3,)
     object_vel = jnp.array([0.0, 0.0, 0.0])  # Shape (3,)
     object_ang_vel = jnp.array([0.0, 0.0, 0.0])  # Shape (3,)
     goal_ang_vel = jnp.array([0.0, 0.0, 0.0])  # Shape (3,)
