@@ -35,10 +35,10 @@ class Callbacks:
             terminal_cost: Callable[[jnp.ndarray], jnp.ndarray],
             control_cost: Callable[[jnp.ndarray], jnp.ndarray],
             init_gen: Callable[[int, jnp.ndarray], jnp.ndarray],
-            state_encoder: Callable[[jnp.ndarray], jnp.ndarray],
+            state_encoder: Callable[[mjx.Model,mjx.Data], jnp.ndarray],
             state_decoder: Callable[[jnp.ndarray], jnp.ndarray],
             gen_network: Callable[[int], Network],
-            controller: Callable[[jnp.ndarray, jnp.ndarray, Network, Config, mjx.Model, mjx.Data, jnp.ndarray],
+            controller: Callable[[jnp.ndarray, Network, Context, mjx.Model, mjx.Data, jnp.ndarray],
             tuple[mjx.Data, jnp.ndarray]],
             loss_func: Callable[[PyTree, PyTree, jnp.ndarray, Context, jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray]]
     ):

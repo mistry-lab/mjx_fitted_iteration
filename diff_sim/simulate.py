@@ -27,19 +27,17 @@ def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network, key: jn
     def step(carry, _):
         dx, key = carry
         key, subkey = jax.random.split(key)
-        # this first decoder should be removed
-        x = ctx.cbs.state_encoder(jnp.concatenate([dx.qpos, dx.qvel], axis=0))
+        x = ctx.cbs.state_encoder(mx,dx)
         t = jnp.expand_dims(dx.time, axis=0)
-        dx, u = ctx.cbs.controller(x, t, net, ctx.cfg, mx, dx, subkey)
+        dx, u = ctx.cbs.controller(t, net, ctx, mx, dx, subkey)
         cost = cost_fn(x, u)
         dx = mjx.step(mx, dx) # Dynamics function
-        x = ctx.cbs.state_encoder(jnp.concatenate([dx.qpos, dx.qvel], axis=0))
+        x = ctx.cbs.state_encoder(mx,dx)
         return (dx, key), jnp.concatenate([x, dx.ctrl, cost, t], axis=0)
 
     @jax.vmap
     def rollout(x_init):
         dx = set_init(x_init)
-        x_init = ctx.cbs.state_encoder(x_init)
         _, res = jax.lax.scan(step, (dx, key), None, length=ctx.cfg.nsteps-1)
         x, u, costs, ts = res[...,:-mx.nu-2], res[...,-mx.nu-2:-2], res[...,-2], res[...,-1]
         x = jnp.concatenate([x_init.reshape(1,-1), x], axis=0)

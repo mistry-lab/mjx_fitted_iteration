@@ -30,9 +30,9 @@ class Policy(Network):
         return self.layers[-1](x)
 
 
-def policy(
-        x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray
+def policy(t: jnp.ndarray, net: Network, ctx: Context, mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray
 ) -> tuple[mjx.Data, jnp.ndarray]:
+    x = ctx.cbs.state_encoder(mx,dx)
     # returns the updated data and the control
     u = net(x, t)
     dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
@@ -60,8 +60,10 @@ def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
     return xinits
 
 
-def coder(x: jnp.ndarray) -> jnp.ndarray:
-    # encode and decode the state. Do nothing in this case
+def state_encoder(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
+    return jnp.concatenate([dx.qpos, dx.qvel], axis=0)
+
+def state_decoder(x: jnp.ndarray) -> jnp.ndarray:
     return x
 
 def gen_network(seed: int) -> Network:
@@ -86,8 +88,8 @@ ctx = Context(
         terminal_cost= terminal_cost,
         control_cost= control_cost,
         init_gen= init_gen,
-        state_encoder= coder,
-        state_decoder= coder,
+        state_encoder= state_encoder,
+        state_decoder= state_decoder,
         gen_network=gen_network,
         controller=policy,
         loss_func=loss_fn_policy_stoch

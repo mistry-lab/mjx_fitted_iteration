@@ -30,9 +30,9 @@ class Policy(Network):
         return self.layers[-1](x).squeeze()
 
 
-def policy(
-        x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
+def policy(t: jnp.ndarray, net: Network, ctx: Context, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
 ) -> tuple[mjx.Data, jnp.ndarray]:
+    x = ctx.cbs.state_encoder(mx,dx)
     u = net(x, t)
     dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
     return dx, u
@@ -96,8 +96,8 @@ def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
     return xinits
 
 
-def state_encoder(x: jnp.ndarray) -> jnp.ndarray:
-    return x
+def state_encoder(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
+    return jnp.concatenate([dx.qpos, dx.qvel], axis=0)
 
 
 def state_decoder(x: jnp.ndarray) -> jnp.ndarray:

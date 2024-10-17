@@ -29,11 +29,11 @@ class Policy(Network):
         return self.layers[-1](x).squeeze()
 
 
-def policy(
-        x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
+def policy(t: jnp.ndarray, net: Network, ctx: Context, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
 ) -> tuple[mjx.Data, jnp.ndarray]:
     # under this policy the cost function is quite important the cost that works is:
     # Q = diag([0, 0]) or Q = diag([10, 0.01]) and R = diag([0.01]) and QF = diag([10, 0.01])
+    x = ctx.cbs.state_encoder(mx,dx)
     act_id = mx.actuator_trnid[:, 0]
     M = mjx.full_m(mx, dx)
     invM = jnp.linalg.inv(M)
@@ -65,8 +65,8 @@ def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
 
     return xinits
 
-def state_encoder(x: jnp.ndarray) -> jnp.ndarray:
-    return x
+def state_encoder(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
+    return jnp.concatenate([dx.qpos, dx.qvel], axis=0)
 
 def state_decoder(x: jnp.ndarray) -> jnp.ndarray:
     return x
@@ -83,7 +83,7 @@ ctx = Context(
         seed=0,
         nsteps=100,
         epochs=1000,
-        batch=64,
+        batch=2,
         samples=1,
         eval=10,
         dt=0.01,
