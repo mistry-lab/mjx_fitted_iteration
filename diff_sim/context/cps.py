@@ -30,9 +30,10 @@ class Policy(Network):
         return self.layers[-1](x)
 
 
-def policy(t: jnp.ndarray, net: Network, ctx: Context, mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray
+def policy(net: Network, ctx: Context, mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray
 ) -> tuple[mjx.Data, jnp.ndarray]:
     x = ctx.cbs.state_encoder(mx,dx)
+    t = jnp.expand_dims(dx.time, axis=0)
     # returns the updated data and the control
     u = net(x, t)
     dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
@@ -77,7 +78,7 @@ ctx = Context(
         seed=0,
         nsteps=125,
         epochs=400,
-        batch=1000,
+        batch=64,
         samples=1,
         eval=10,
         dt=0.01,

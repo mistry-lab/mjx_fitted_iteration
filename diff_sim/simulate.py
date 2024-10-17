@@ -28,11 +28,11 @@ def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network, key: jn
         dx, key = carry
         key, subkey = jax.random.split(key)
         x = ctx.cbs.state_encoder(mx,dx)
-        t = jnp.expand_dims(dx.time, axis=0)
-        dx, u = ctx.cbs.controller(t, net, ctx, mx, dx, subkey)
+        dx, u = ctx.cbs.controller(net, ctx, mx, dx, subkey)
         cost = cost_fn(x, u)
         dx = mjx.step(mx, dx) # Dynamics function
         x = ctx.cbs.state_encoder(mx,dx)
+        t = jnp.expand_dims(dx.time, axis=0)
         return (dx, key), jnp.concatenate([x, dx.ctrl, cost, t], axis=0)
 
     @jax.vmap
@@ -41,9 +41,9 @@ def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network, key: jn
         _, res = jax.lax.scan(step, (dx, key), None, length=ctx.cfg.nsteps-1)
         x, u, costs, ts = res[...,:-mx.nu-2], res[...,-mx.nu-2:-2], res[...,-2], res[...,-1]
         x = jnp.concatenate([x_init.reshape(1,-1), x], axis=0)
+        t = jnp.concatenate([jnp.array([ctx.cfg.dt]), ts], axis=0)
         tcost = ctx.cbs.terminal_cost(x[-1]) # Terminal cost
         costs = jnp.concatenate([costs, tcost.reshape(-1)], axis=0)
-        t = jnp.concatenate([ts,jnp.array([ts[-1] + ctx.cfg.dt])], axis=0)
         return x, u, costs, t
 
     return rollout(x_inits)

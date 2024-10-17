@@ -29,11 +29,12 @@ class Policy(Network):
         return self.layers[-1](x).squeeze()
 
 
-def policy(t: jnp.ndarray, net: Network, ctx: Context, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
+def policy(net: Network, ctx: Context, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
 ) -> tuple[mjx.Data, jnp.ndarray]:
     # under this policy the cost function is quite important the cost that works is:
     # Q = diag([0, 0]) or Q = diag([10, 0.01]) and R = diag([0.01]) and QF = diag([10, 0.01])
     x = ctx.cbs.state_encoder(mx,dx)
+    t = jnp.expand_dims(dx.time, axis=0)
     act_id = mx.actuator_trnid[:, 0]
     M = mjx.full_m(mx, dx)
     invM = jnp.linalg.inv(M)

@@ -38,7 +38,7 @@ class Callbacks:
             state_encoder: Callable[[mjx.Model,mjx.Data], jnp.ndarray],
             state_decoder: Callable[[jnp.ndarray], jnp.ndarray],
             gen_network: Callable[[int], Network],
-            controller: Callable[[jnp.ndarray, Network, Context, mjx.Model, mjx.Data, jnp.ndarray],
+            controller: Callable[[Network, Context, mjx.Model, mjx.Data, jnp.ndarray],
             tuple[mjx.Data, jnp.ndarray]],
             loss_func: Callable[[PyTree, PyTree, jnp.ndarray, Context, jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray]]
     ):
