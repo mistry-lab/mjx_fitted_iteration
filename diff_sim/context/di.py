@@ -76,6 +76,10 @@ def gen_network(seed: int) -> Network:
     key = jax.random.PRNGKey(seed)
     return Policy([3, 64, 64, 1], key)
 
+def gen_model() -> mujoco.MjModel:
+    """ Generate MjModel.
+    """
+    return mujoco.MjModel.from_xml_path(model_path)
 
 ctx = Context(
     Config(
@@ -88,8 +92,8 @@ ctx = Context(
         samples=1,
         eval=10,
         dt=0.01,
-        path=model_path,
-        mx=mjx.put_model(mujoco.MjModel.from_xml_path(model_path)),
+        mx= mjx.put_model(gen_model()),
+        gen_model=gen_model,
     ),
     Callbacks(
         run_cost=run_cost,

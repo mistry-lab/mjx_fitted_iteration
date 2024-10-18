@@ -70,6 +70,10 @@ def state_decoder(x: jnp.ndarray) -> jnp.ndarray:
 def gen_network(seed: int) -> Network:
     return Policy([5, 128, 128, 1], jax.random.PRNGKey(seed))
 
+def gen_model() -> mujoco.MjModel:
+    """ Generate MjModel.
+    """
+    return mujoco.MjModel.from_xml_path(model_path)
 
 ctx = Context(
     cfg=Config(
@@ -82,8 +86,9 @@ ctx = Context(
         samples=1,
         eval=10,
         dt=0.01,
-        path=model_path,
-        mx=mjx.put_model(mujoco.MjModel.from_xml_path(model_path))),
+        mx= mjx.put_model(gen_model()),
+        gen_model=gen_model,
+    ),
     cbs=Callbacks(
         run_cost= run_cost,
         terminal_cost= terminal_cost,

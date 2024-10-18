@@ -5,6 +5,7 @@ from typing import Callable, get_type_hints, get_args, get_origin
 from inspect import signature, Parameter
 from dataclasses import dataclass
 from functools import partial
+import mujoco
 from mujoco import mjx
 from jax import numpy as jnp
 import jax.tree_util
@@ -13,7 +14,7 @@ from diff_sim.nn.base_nn import Network
 
 @partial(jax.tree_util.register_dataclass,
          data_fields=['mx'],
-         meta_fields=['lr', 'num_gpu', 'seed', 'nsteps', 'epochs', 'batch', 'samples', 'eval', 'dt', 'path'])
+         meta_fields=['lr', 'num_gpu', 'seed', 'nsteps', 'epochs', 'batch', 'samples', 'eval', 'dt', "gen_model"])
 @dataclass(frozen=True)
 class Config:
     lr: float     # learning rate
@@ -25,8 +26,8 @@ class Config:
     samples: int  # number of simulations per initial state
     eval: int     # visualization and saving checkpoints frequency
     dt: float     # simulation time step
-    path: str     # path to the mujoco model
-    mx: mjx.Model # mujoco model
+    mx: mjx.Model # MJX model
+    gen_model: Callable[[], mujoco.MjModel]  # Genereate Mujoco MjModel
 
 class Callbacks:
     def __init__(
@@ -111,6 +112,10 @@ class Context:
         assert cfg.num_gpu <= jax.device_count()
         assert (cfg.batch * cfg.samples) % cfg.num_gpu == 0
 
-
-
+# Another possible option : 
+# Create a .model attribute in ctx.cfg which contain both mj and mjx model.
+# class Model:
+#     def __init__(self, mjx_model:mjx.Model):
+#         # self.m = mj_model # Mujoco model
+#         self.mx = mjx_model # MJX model
 

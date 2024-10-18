@@ -37,7 +37,7 @@ if __name__ == '__main__':
         key, subkey = jax.random.split(init_key)
 
         # Model and data for rendering (CPU side)
-        model = mujoco.MjModel.from_xml_path(ctx.cfg.path)
+        model = ctx.cfg.gen_model()
         data = mujoco.MjData(model)
         viewer_context = contextlib.nullcontext() if args.headless else viewer.launch_passive(model, data)
 

@@ -1,5 +1,6 @@
 import os
 import jax
+import numpy as np
 from jax import numpy as jnp
 import equinox as eqx
 import mujoco
@@ -104,11 +105,23 @@ def state_encoder(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
 def state_decoder(x: jnp.ndarray) -> jnp.ndarray:
     return x
 
-
 def gen_network(seed: int) -> Network:
     key = jax.random.PRNGKey(seed)
     return Policy([62, 64, 64, 24], key)
 
+
+def gen_model() -> mujoco.MjModel:
+    """ Generate both MjModel and MJX Model.
+    """
+    m = mujoco.MjModel.from_xml_path(model_path)
+    
+    # Modify reference position. (qpos - qpos0)
+    m.qpos0[:24] = -np.array([
+        -0.056, 0.014, -0.077, 0.55, 0.91, 1.1, 0.052, 0.7, 1, 0.54,
+        0.062, 0.59, 1.1, 0.52, 0.22, -0.081, 0.39, 1.1, 0.99, -0.24,
+        0.63, 0.2, 0.7, 0.65])
+    
+    return m
 
 ctx = Context(
     Config(
@@ -121,8 +134,8 @@ ctx = Context(
         samples=1,
         eval=10,
         dt=0.006,
-        path=model_path,
-        mx=mjx.put_model(mujoco.MjModel.from_xml_path(model_path)),
+        mx= mjx.put_model(gen_model()),
+        gen_model=gen_model,
     ),
     Callbacks(
         run_cost=run_cost,
