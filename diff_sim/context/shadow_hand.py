@@ -36,7 +36,10 @@ def policy(net: Network, ctx: Context, mx: mjx.Model, dx: mjx.Data, policy_key: 
 ) -> tuple[mjx.Data, jnp.ndarray]:
     x = ctx.cbs.state_encoder(mx,dx)
     t = jnp.expand_dims(dx.time, axis=0)
-    u = net(x, t)
+    u = 0.01*+net(x, t) + dx.ctrl
+    u += 0.002 * jax.random.normal(policy_key, u.shape)
+    # u = 0.5*net(x, t)
+    # u += 0.002*jax.random.normal(policy_key, u.shape)
     # Setup offset
     dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
     return dx, u
@@ -63,7 +66,7 @@ def run_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     quat = parse_data("object_orientation",mx,dx)
     quat_ref = parse_data("goal_orientation",mx,dx)
     # quat_ref = jnp.array([1.,0.,0.,0.])
-    cquat = 0.1*jnp.sum(quaternion_difference(quat, quat_ref)**2)
+    cquat = 0.5*jnp.sum(quaternion_difference(quat, quat_ref)**2)
 
     vel = parse_data("object_linear_velocity",mx,dx)
     cvel = 0.05*jnp.sum(vel**2)
@@ -71,8 +74,8 @@ def run_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     ang_vel = parse_data("object_angular_velocity",mx,dx)
     cang_vel = 0.05*jnp.sum(ang_vel**2)
 
-    cjoint_pos = 2.*jnp.sum(dx.qpos[:24]**2) 
-    cjoint_vel = 5.*jnp.sum(dx.qvel[:24]**2)
+    cjoint_pos = 0.2*jnp.sum(dx.qpos[:24]**2) 
+    cjoint_vel = 0.2*jnp.sum(dx.qvel[:24]**2)
 
     return cpos + cquat + cvel + cang_vel + cjoint_pos + cjoint_vel
 
@@ -88,12 +91,12 @@ def terminal_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     """
     pos = parse_data("object_position",mx,dx)
     pos_ref = parse_data("palm_position",mx,dx)
-    cpos = 1.*jnp.sum((pos - pos_ref)**2)
+    cpos = 0.5*jnp.sum((pos - pos_ref)**2)
 
     quat = parse_data("object_orientation",mx,dx)
     quat_ref = parse_data("goal_orientation",mx,dx)
     # quat_ref = jnp.array([1.,0.,0.,0.])
-    cquat = 1.*jnp.sum(quaternion_difference(quat, quat_ref)**2)
+    cquat = 2.*jnp.sum(quaternion_difference(quat, quat_ref)**2)
 
     vel = parse_data("object_linear_velocity",mx,dx)
     cvel = 0.25*jnp.sum(vel**2)
@@ -101,8 +104,8 @@ def terminal_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     ang_vel = parse_data("object_angular_velocity",mx,dx)
     cang_vel = 0.25*jnp.sum(ang_vel**2)
 
-    cjoint_pos = 2.*jnp.sum(dx.qpos[:24]**2)    
-    cjoint_vel = 5.*jnp.sum(dx.qvel[:24]**2)
+    cjoint_pos = 0.2*jnp.sum(dx.qpos[:24]**2)    
+    cjoint_vel = 0.2*jnp.sum(dx.qvel[:24]**2)
 
     return cpos + cquat + cvel + cang_vel + cjoint_pos + cjoint_vel
 
@@ -182,7 +185,7 @@ ctx = Context(
         lr=4e-3,
         num_gpu=1,
         seed=0,
-        nsteps=200,
+        nsteps=400,
         epochs=1000,
         batch=32,
         samples=1,
@@ -200,6 +203,6 @@ ctx = Context(
         state_decoder=state_decoder,
         gen_network=gen_network,
         controller=policy,
-        loss_func=loss_fn_policy_det
+        loss_func=loss_fn_policy_stoch
     )
 )
