@@ -32,9 +32,9 @@ class Config:
 class Callbacks:
     def __init__(
             self,
-            run_cost: Callable[[jnp.ndarray], jnp.ndarray],
-            terminal_cost: Callable[[jnp.ndarray], jnp.ndarray],
-            control_cost: Callable[[jnp.ndarray], jnp.ndarray],
+            run_cost: Callable[[mjx.Model,mjx.Data], jnp.ndarray],
+            terminal_cost: Callable[[mjx.Model,mjx.Data], jnp.ndarray],
+            control_cost: Callable[[mjx.Model,mjx.Data], jnp.ndarray],
             init_gen: Callable[[int, jnp.ndarray], jnp.ndarray],
             state_encoder: Callable[[mjx.Model,mjx.Data], jnp.ndarray],
             state_decoder: Callable[[jnp.ndarray], jnp.ndarray],

@@ -8,6 +8,7 @@ from mujoco import mjx
 from diff_sim.loss_funcs import loss_fn_policy_stoch, loss_fn_td_stoch, loss_fn_td_det, loss_fn_policy_det
 from diff_sim.context.meta_context import Config, Callbacks, Context
 from diff_sim.nn.base_nn import Network
+from utils.math_helper import quaternion_difference
 
 model_path = os.path.join(os.path.dirname(__file__), '../xmls/shadow_hand/scene_right.xml')
 
@@ -35,24 +36,80 @@ def policy(net: Network, ctx: Context, mx: mjx.Model, dx: mjx.Data, policy_key: 
 ) -> tuple[mjx.Data, jnp.ndarray]:
     x = ctx.cbs.state_encoder(mx,dx)
     t = jnp.expand_dims(dx.time, axis=0)
-    u = net(x, t)
+    u = 0.25*net(x, t)
+    # Setup offset
     dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
     return dx, u
 
+def parse_data(name,mx,dx):
+    id = mjx.name2id(mx, mujoco.mjtObj.mjOBJ_SENSOR, name)
+    i = mx.sensor_adr[id]
+    dim = mx.sensor_dim[id]
+    return dx.sensordata[i:i+dim]
 
-def run_cost(x: jnp.ndarray) -> jnp.ndarray:
-    # x^T Q x
-    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.full((61,), 0.0)), x))
+def run_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
+    """ 
+    Running costs. Number of costs: 5
+    (1): object_position - palm_position
+    (2): object_orientation - goal_orientation
+    (3): Object linear velocity
+    (4): Object angular velocity
+    (5): hand joint velocity
+    """
+    pos = parse_data("object_position",mx,dx)
+    pos_ref = parse_data("palm_position",mx,dx)
+    cpos = 0.1*jnp.sum((pos - pos_ref)**2)
 
+    quat = parse_data("object_orientation",mx,dx)
+    quat_ref = jnp.array([1.,0.,0.,0.])
+    cquat = 0.1*jnp.sum(quaternion_difference(quat, quat_ref)**2)
 
-def terminal_cost(x: jnp.ndarray) -> jnp.ndarray:
-    # x^T Q_f x
-    return 10 * jnp.dot(x.T, jnp.dot(jnp.diag(jnp.full((61,), 0.1)), x))
+    vel = parse_data("object_linear_velocity",mx,dx)
+    cvel = 0.05*jnp.sum(vel**2)
 
+    ang_vel = parse_data("object_angular_velocity",mx,dx)
+    cang_vel = 0.05*jnp.sum(ang_vel**2)
 
-def control_cost(x: jnp.ndarray) -> jnp.ndarray:
-    # u^T R u
-    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.full((24,), 0.01)), x))
+    cjoint_pos = 2.*jnp.sum(dx.qpos[:24]**2) 
+    cjoint_vel = 5.*jnp.sum(dx.qvel[:24]**2)
+
+    return cpos + cquat + cvel + cang_vel + cjoint_pos + cjoint_vel
+
+def terminal_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
+    """
+    Terminal costs. Number of costs: 5
+    (1): object_position - palm_position
+    (2): object_orientation - goal_orientation
+    (3): Object linear velocity
+    (4): Object angular velocity
+    (5): Hand joint position around ref (0 vector)
+    (6): Hand joint velocity
+    """
+    pos = parse_data("object_position",mx,dx)
+    pos_ref = parse_data("palm_position",mx,dx)
+    cpos = 1.*jnp.sum((pos - pos_ref)**2)
+
+    quat = parse_data("object_orientation",mx,dx)
+    quat_ref = jnp.array([1.,0.,0.,0.])
+    cquat = 1.*jnp.sum(quaternion_difference(quat, quat_ref)**2)
+
+    vel = parse_data("object_linear_velocity",mx,dx)
+    cvel = 0.25*jnp.sum(vel**2)
+
+    ang_vel = parse_data("object_angular_velocity",mx,dx)
+    cang_vel = 0.25*jnp.sum(ang_vel**2)
+
+    cjoint_pos = 2.*jnp.sum(dx.qpos[:24]**2)    
+    cjoint_vel = 5.*jnp.sum(dx.qvel[:24]**2)
+
+    return cpos + cquat + cvel + cang_vel + cjoint_pos + cjoint_vel
+
+def control_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
+    """ Control cost. Due to position control, penalisation 
+    of actuator_force instead.
+    """
+    x = dx.actuator_force
+    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.full((24,), 10.)), x))
 
 
 def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
@@ -65,7 +122,7 @@ def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
 
     # 1. Generate joint_pos and joint_vel
     key, subkey1, subkey2, subkey3, subkey4 = jax.random.split(key, 5)  # Splitting key for different random generations
-    joint_pos = jax.random.uniform(subkey1, (total_batch, 24), minval=-0.05, maxval=0.05)
+    joint_pos = jax.random.uniform(subkey1, (total_batch, 24), minval=-0.01, maxval=0.01)
     joint_vel = jax.random.uniform(subkey2, (total_batch, 24), minval=-0.05, maxval=0.05)
     # object_quat = random_quaternion(subkey3, total_batch)
     # goal_quat = random_quaternion(subkey4, total_batch)
@@ -73,7 +130,7 @@ def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
     # goal_quat = jnp.tile(jnp.array([1., 0.0, 0., 0.]), (total_batch, 1))
 
     # 2. Fixed values for object_pos, object_vel, object_ang_vel, goal_ang_vel
-    object_pos = jnp.array([0.3, 0.0, 0.055])  # Shape (3,)
+    object_pos = jnp.array([0.3, 0.0, 0.065])  # Shape (3,)
     object_vel = jnp.array([0.0, 0.0, 0.0])  # Shape (3,)
     object_ang_vel = jnp.array([0.0, 0.0, 0.0])  # Shape (3,)
     goal_ang_vel = jnp.array([0.0, 0.0, 0.0])  # Shape (3,)
@@ -128,12 +185,12 @@ ctx = Context(
         lr=4e-3,
         num_gpu=1,
         seed=0,
-        nsteps=100,
+        nsteps=500,
         epochs=1000,
-        batch=2,
+        batch=32,
         samples=1,
         eval=10,
-        dt=0.006,
+        dt=0.005,
         mx= mjx.put_model(gen_model()),
         gen_model=gen_model,
     ),

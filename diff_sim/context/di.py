@@ -46,16 +46,19 @@ def policy(net: Network, ctx: Context, mx: mjx.Model, dx: mjx.Data, policy_key: 
     dx = dx.replace(ctrl=dx.ctrl.at[:].set(noisy_u))
     return dx, noisy_u
 
-def run_cost(x: jnp.ndarray) -> jnp.ndarray:
+def run_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     # x^T Q x
+    x = state_encoder(mx,dx)
     return  jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0, 0])), x))
 
-def terminal_cost(x: jnp.ndarray) -> jnp.ndarray:
+def terminal_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     # x^T Q_f x
+    x = state_encoder(mx,dx)
     return 10*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10, 0.01])), x))
 
-def control_cost(x: jnp.ndarray) -> jnp.ndarray:
+def control_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     # u^T R u
+    x = dx.ctrl
     return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0.01])), x))
 
 def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:

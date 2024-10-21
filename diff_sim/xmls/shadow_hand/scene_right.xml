@@ -30,4 +30,12 @@
     </body>
   </worldbody>
 
+  <sensor>
+    <framepos name="palm_position" objtype="site" objname="grasp_site"/>
+    <framepos name="object_position" objtype="body" objname="object"/>
+    <framequat name="object_orientation" objtype="body" objname="object"/>
+    <framelinvel name="object_linear_velocity" objtype="body" objname="object"/>
+    <frameangvel name="object_angular_velocity" objtype="body" objname="object"/>
+  </sensor>
+
 </mujoco>
