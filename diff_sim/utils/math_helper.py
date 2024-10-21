@@ -1,6 +1,14 @@
 import jax
 import jax.numpy as jnp
 
+def random_quaternion(key, batch_size):
+    """
+    Generate a random unit quaternion for each element in the batch.
+    """
+    q = jax.random.normal(key, (batch_size, 4))  # Normal distribution for quaternion
+    q /= jnp.linalg.norm(q, axis=-1, keepdims=True)  # Normalize to get unit quaternion
+    return q
+
 def quaternion_conjugate(q):
     """
     Computes the conjugate (inverse) of a quaternion.

@@ -8,7 +8,7 @@ from mujoco import mjx
 from diff_sim.loss_funcs import loss_fn_policy_stoch, loss_fn_td_stoch, loss_fn_td_det, loss_fn_policy_det
 from diff_sim.context.meta_context import Config, Callbacks, Context
 from diff_sim.nn.base_nn import Network
-from utils.math_helper import quaternion_difference
+from utils.math_helper import quaternion_difference, random_quaternion
 
 model_path = os.path.join(os.path.dirname(__file__), '../xmls/shadow_hand/scene_right.xml')
 
@@ -36,7 +36,7 @@ def policy(net: Network, ctx: Context, mx: mjx.Model, dx: mjx.Data, policy_key: 
 ) -> tuple[mjx.Data, jnp.ndarray]:
     x = ctx.cbs.state_encoder(mx,dx)
     t = jnp.expand_dims(dx.time, axis=0)
-    u = 0.25*net(x, t)
+    u = net(x, t)
     # Setup offset
     dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
     return dx, u
@@ -61,7 +61,8 @@ def run_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     cpos = 0.1*jnp.sum((pos - pos_ref)**2)
 
     quat = parse_data("object_orientation",mx,dx)
-    quat_ref = jnp.array([1.,0.,0.,0.])
+    quat_ref = parse_data("goal_orientation",mx,dx)
+    # quat_ref = jnp.array([1.,0.,0.,0.])
     cquat = 0.1*jnp.sum(quaternion_difference(quat, quat_ref)**2)
 
     vel = parse_data("object_linear_velocity",mx,dx)
@@ -90,7 +91,8 @@ def terminal_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     cpos = 1.*jnp.sum((pos - pos_ref)**2)
 
     quat = parse_data("object_orientation",mx,dx)
-    quat_ref = jnp.array([1.,0.,0.,0.])
+    quat_ref = parse_data("goal_orientation",mx,dx)
+    # quat_ref = jnp.array([1.,0.,0.,0.])
     cquat = 1.*jnp.sum(quaternion_difference(quat, quat_ref)**2)
 
     vel = parse_data("object_linear_velocity",mx,dx)
@@ -113,20 +115,15 @@ def control_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
 
 
 def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
-    # Generate random quaternions for object_quat and goal_quat (shape (4,))
-    def random_quaternion(key, batch_size):
-        """Generate a random unit quaternion for each element in the batch."""
-        q = jax.random.normal(key, (batch_size, 4))  # Normal distribution for quaternion
-        q /= jnp.linalg.norm(q, axis=-1, keepdims=True)  # Normalize to get unit quaternion
-        return q
-
+    """ Initialise Shadow hand scene. (Right hand, sphere object and sphere goal)
+    """
     # 1. Generate joint_pos and joint_vel
     key, subkey1, subkey2, subkey3, subkey4 = jax.random.split(key, 5)  # Splitting key for different random generations
     joint_pos = jax.random.uniform(subkey1, (total_batch, 24), minval=-0.01, maxval=0.01)
     joint_vel = jax.random.uniform(subkey2, (total_batch, 24), minval=-0.05, maxval=0.05)
-    # object_quat = random_quaternion(subkey3, total_batch)
-    # goal_quat = random_quaternion(subkey4, total_batch)
-    object_quat = jnp.tile(jnp.array([1., 0.0, 0., 0.]), (total_batch, 1))
+    object_quat = random_quaternion(subkey3, total_batch)
+    # object_quat = jnp.tile(jnp.array([1., 0.0, 0., 0.]), (total_batch, 1))
+    goal_quat = random_quaternion(subkey4, total_batch)
     # goal_quat = jnp.tile(jnp.array([1., 0.0, 0., 0.]), (total_batch, 1))
 
     # 2. Fixed values for object_pos, object_vel, object_ang_vel, goal_ang_vel
@@ -145,11 +142,11 @@ def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
         joint_pos,  # Shape (total_batch, 20)
         object_pos_broadcast,  # Shape (total_batch, 3)
         object_quat,  # Shape (total_batch, 4)
-        # goal_quat,  # Shape (total_batch, 4)
+        goal_quat,  # Shape (total_batch, 4)
         joint_vel,  # Shape (total_batch, 20)
         object_vel_broadcast,  # Shape (total_batch, 3)
         object_ang_vel_broadcast,  # Shape (total_batch, 3)
-        # goal_ang_vel_broadcast  # Shape (total_batch, 3)
+        goal_ang_vel_broadcast  # Shape (total_batch, 3)
     ], axis=1).squeeze()
 
     return xinits
@@ -164,7 +161,7 @@ def state_decoder(x: jnp.ndarray) -> jnp.ndarray:
 
 def gen_network(seed: int) -> Network:
     key = jax.random.PRNGKey(seed)
-    return Policy([62, 64, 64, 24], key)
+    return Policy([69, 64, 64, 24], key)
 
 
 def gen_model() -> mujoco.MjModel:
@@ -185,7 +182,7 @@ ctx = Context(
         lr=4e-3,
         num_gpu=1,
         seed=0,
-        nsteps=500,
+        nsteps=200,
         epochs=1000,
         batch=32,
         samples=1,

@@ -28,6 +28,11 @@
       <geom type="sphere" material="textured_material" size="0.04" rgba="0.5 0.7 0.5 1" condim="3" priority="1"
         friction="0.5 0.01 0.003" contype="7"/>
     </body>
+    <body name="goal" pos="0.3 0.3 0.065">
+      <joint type="ball" damping="0.01"/>
+      <geom type="sphere" material="textured_material" size="0.04" rgba="0.5 0.7 0.5 1" condim="3"
+        friction="0.5 0.01 0.003" contype="0" conaffinity="0"/>
+    </body>
   </worldbody>
 
   <sensor>
@@ -36,6 +41,7 @@
     <framequat name="object_orientation" objtype="body" objname="object"/>
     <framelinvel name="object_linear_velocity" objtype="body" objname="object"/>
     <frameangvel name="object_angular_velocity" objtype="body" objname="object"/>
+    <framequat name="goal_orientation" objtype="body" objname="goal"/>
   </sensor>
 
 </mujoco>
