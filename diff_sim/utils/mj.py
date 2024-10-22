@@ -6,6 +6,7 @@ import jax
 from diff_sim.context.meta_context import Context
 from diff_sim.simulate import controlled_simulate
 from diff_sim.nn.base_nn import Network
+import equinox as eqx
 
 def visualise_policy(
         d: mujoco.MjData, m: mujoco.MjModel, viewer: mujoco.viewer.Handle,
@@ -13,7 +14,9 @@ def visualise_policy(
 ):
     key, xkey, tkey, user_key = jax.random.split(key, num=4)
     x_inits = ctx.cbs.init_gen(2, xkey)
-    x, _, _, _ = controlled_simulate(x_inits, ctx, net, key)
+    x, u, _, _ = eqx.filter_jit(controlled_simulate)(x_inits, ctx, net, key)
+    # sample n random trajectories x
+    x = jax.random.permutation(user_key, x)[:5]
     x = jax.vmap(jax.vmap(ctx.cbs.state_decoder))(x)
     x = np.array(x.squeeze())
     for b in range(x.shape[0]):

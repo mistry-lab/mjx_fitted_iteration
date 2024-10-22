@@ -3,6 +3,9 @@ import jax
 import jax.numpy as jnp
 from abc import ABC, abstractmethod
 
+from jax.tools.build_utils import update_setup_with_rocm_version
+
+
 class Network(eqx.Module, ABC):
     """
     Abstract base class for policies. Users should inherit from this class
@@ -35,14 +38,17 @@ r
             state: Optimizer state.
             x_init: Initial input data.
             ctx: Context object containing additional information like loss function.
+            user_key: Random key for the user.
 
         Returns:
             Tuple[BasePolicy, state, float]: Updated model, updated state, and loss value.
         """
+
         params, static = eqx.partition(model, eqx.is_array)
         (loss_value, traj_costs), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(
             params, static, x_init, ctx, user_key
         )
+        
         updates, state = optim.update(grads, state, model)
         model = eqx.apply_updates(model, updates)
 
@@ -60,29 +66,31 @@ r
             state: Optimizer state.
             x_init: Initial input data.
             ctx: Context object containing additional information like loss function.
+            user_key: Random key for the user.
         """
         params, static = eqx.partition(model, eqx.is_array)
 
         # Reshape x_init to have leading dimension equal to the number of GPUs
         num_devices = ctx.cfg.num_gpu
         x_init = x_init.reshape(num_devices, -1, x_init.shape[-1])
+        user_keys = jax.random.split(user_key, num_devices)
 
         # Define the function to be pmapped
-        def per_device_loss_and_grad(params, static, x_init, ctx):
+        def per_device_loss_and_grad(d_params, d_static, d_x_init, d_ctx, user_key_d):
             # Compute per-device loss and gradient
-            (loss_value, traj_costs), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(
-                params, static, x_init, ctx, user_key
+            (loss_value_d, traj_costs_d), grads_d = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(
+                d_params, d_static, d_x_init, d_ctx, user_key_d
             )
             # Average loss and gradients across devices
-            grads = jax.lax.pmean(grads, axis_name='devices')
-            return (loss_value, traj_costs), grads
+            grads_d = jax.lax.pmean(grads_d, axis_name='devices')
+            return (loss_value_d, traj_costs_d), grads_d
 
         # Compute loss and gradients using pmap
         (loss_value, traj_costs), grads = eqx.filter_pmap(
             per_device_loss_and_grad,
             axis_name='devices',
-            in_axes=(None, None, 0, None),
-        )(params, static, x_init, ctx)
+            in_axes=(None, None, 0, None, 0),
+        )(params, static, x_init, ctx, user_keys)
 
         # Extract the averaged gradients from one device
         grads = jax.tree_util.tree_map(lambda x: x[0], grads)

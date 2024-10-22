@@ -5,9 +5,13 @@ import equinox as eqx
 from diff_sim.context.meta_context import Context
 from diff_sim.nn.base_nn import Network
 
-@eqx.filter_jit
-def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network, key: jnp.ndarray):
+# TODO: This function is jitted twice here and in make_step. This makes debugging break due tracing issues
+# TODO: this was done because in visualise_policy we need to call this function and we jitted here for speed
+# TODO: so best option is to not jit here and jit in visualise_policy separately or jit here and jit the other components
+# TODO: in make_step separately but simplest is to jit in visualise_policy and not here
+def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network, user_key: jnp.ndarray):
     mx = ctx.cfg.mx
+    keys = jax.random.split(user_key, x_inits.shape[0])
 
     def cost_fn(x, u):
         ucost = ctx.cbs.control_cost(u) * ctx.cfg.dt
@@ -27,17 +31,16 @@ def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network, key: jn
     def step(carry, _):
         dx, key = carry
         key, subkey = jax.random.split(key)
-        # this first decoder should be removed
         x = ctx.cbs.state_encoder(jnp.concatenate([dx.qpos, dx.qvel], axis=0))
         t = jnp.expand_dims(dx.time, axis=0)
         dx, u = ctx.cbs.controller(x, t, net, ctx.cfg, mx, dx, subkey)
         cost = cost_fn(x, u)
-        dx = mjx.step(mx, dx) # Dynamics function
+        dx = mjx.step(mx, dx)
         x = ctx.cbs.state_encoder(jnp.concatenate([dx.qpos, dx.qvel], axis=0))
         return (dx, key), jnp.concatenate([x, dx.ctrl, cost, t], axis=0)
 
     @jax.vmap
-    def rollout(x_init):
+    def rollout(x_init, key):
         dx = set_init(x_init)
         x_init = ctx.cbs.state_encoder(x_init)
         _, res = jax.lax.scan(step, (dx, key), None, length=ctx.cfg.nsteps-1)
@@ -48,4 +51,4 @@ def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network, key: jn
         t = jnp.concatenate([ts,jnp.array([ts[-1] + ctx.cfg.dt])], axis=0)
         return x, u, costs, t
 
-    return rollout(x_inits)
+    return rollout(x_inits, keys)

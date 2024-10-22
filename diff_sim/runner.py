@@ -6,18 +6,20 @@ import equinox as eqx
 import optax
 from jax import config
 import jax
-import contextlib  # Added for handling headless mode
+import contextlib
 from diff_sim.context.tasks import ctxs
 from diff_sim.utils.tqdm import trange
 from diff_sim.utils.mj import visualise_policy
 from diff_sim.utils.generic import save_model
 
 config.update('jax_default_matmul_precision', 'high')
+config.update("jax_check_tracer_leaks", True)
+
 
 if __name__ == '__main__':
     try:
         parser = argparse.ArgumentParser()
-        parser.add_argument("--task", help="task name", default="double_integrator")
+        parser.add_argument("--task", help="task name", default="simple_push")
         parser.add_argument("--wb_project", help="wandb project name", default="not_named")
         parser.add_argument("--headless", action="store_true", help="Disable visualization")
         parser.add_argument(
@@ -41,7 +43,6 @@ if __name__ == '__main__':
         data = mujoco.MjData(model)
         viewer_context = contextlib.nullcontext() if args.headless else viewer.launch_passive(model, data)
 
-
         # Start the training loop in JAX default device
         with (jax.default_device(jax.devices()[args.gpu_id])), viewer_context as viewer:
             net, optim = ctx.cbs.gen_network(ctx.cfg.seed), optax.adamw(ctx.cfg.lr)
@@ -53,6 +54,7 @@ if __name__ == '__main__':
                 key, xkey, tkey, user_key = jax.random.split(key, num = 4)
                 x_inits = ctx.cbs.init_gen(ctx.cfg.batch * ctx.cfg.samples, xkey)
                 net, opt_state, loss_value, traj_cost = make_step(optim, net, opt_state, x_inits, ctx, user_key)
+                # jax.debug.breakpoint()
                 log_data = {"loss": round(loss_value.item(), 3), "Traj Cost": round(traj_cost.item(), 3)}
                 wandb.log(log_data)
                 es.set_postfix(log_data)
