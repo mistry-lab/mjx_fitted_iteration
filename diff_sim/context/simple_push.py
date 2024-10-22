@@ -10,19 +10,19 @@ from diff_sim.context.meta_context import Config, Callbacks, Context
 from diff_sim.nn.base_nn import Network
 from diff_sim.utils.generic import save_model
 
-model_path = os.path.join(os.path.dirname(__file__), '../xmls/point_mass_tendon.xml')
+model_path = os.path.join(os.path.dirname(__file__), '../xmls/simple_push.xml')
 
 __cfg = Config(
-    lr=0.0000001,
+    lr=0.00001,
     seed=0,
-    batch=10,
+    batch=2,
     samples=1,
     epochs=1000,
     eval=10,
     num_gpu=1,
     path=model_path,
     dt=0.01,
-    nsteps=350,
+    nsteps=200,
     mx=mjx.put_model(mujoco.MjModel.from_xml_path(model_path)),
 )
 

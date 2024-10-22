@@ -14,7 +14,7 @@ from diff_sim.utils.generic import save_model
 
 config.update('jax_default_matmul_precision', 'high')
 config.update("jax_check_tracer_leaks", True)
-
+# config.update("jax_debug_nans", True)
 
 if __name__ == '__main__':
     try:
