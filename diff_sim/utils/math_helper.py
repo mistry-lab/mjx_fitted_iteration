@@ -1,6 +1,58 @@
 import jax
 import jax.numpy as jnp
 
+def random_quaternion(key, batch_size):
+    """
+    Generate a random unit quaternion for each element in the batch.
+    """
+    q = jax.random.normal(key, (batch_size, 4))  # Normal distribution for quaternion
+    q /= jnp.linalg.norm(q, axis=-1, keepdims=True)  # Normalize to get unit quaternion
+    return q
+
+def quaternion_conjugate(q):
+    """
+    Computes the conjugate (inverse) of a quaternion.
+    Args:
+        q: A JAX array of shape (4,) representing the quaternion [w, x, y, z].
+
+    Returns:
+        A JAX array of shape (4,) representing the conjugate quaternion [w, -x, -y, -z].
+    """
+    w, x, y, z = q
+    return jnp.array([w, -x, -y, -z])
+
+def quaternion_multiply(q1, q2):
+    """
+    Multiplies two quaternions.
+    Args:
+        q1: A JAX array of shape (4,) representing the first quaternion [w, x, y, z].
+        q2: A JAX array of shape (4,) representing the second quaternion [w, x, y, z].
+
+    Returns:
+        A JAX array of shape (4,) representing the product of q1 and q2.
+    """
+    w1, x1, y1, z1 = q1
+    w2, x2, y2, z2 = q2
+    return jnp.array([
+        w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+    ])
+
+def quaternion_difference(q1, q2):
+    """
+    Computes the relative rotation (difference) between two quaternions.
+    Args:
+        q1: A JAX array of shape (4,) representing the reference quaternion [w, x, y, z].
+        q2: A JAX array of shape (4,) representing the current quaternion [w, x, y, z].
+
+    Returns:
+        A JAX array of shape (4,) representing the quaternion difference.
+    """
+    q1_conjugate = quaternion_conjugate(q1)
+    return quaternion_multiply(q2, q1_conjugate)
+
 
 def angle_axis_to_quaternion(angle_axis):
     """

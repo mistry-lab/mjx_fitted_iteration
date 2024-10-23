@@ -29,11 +29,12 @@ class Policy(Network):
         return self.layers[-1](x).squeeze()
 
 
-def policy(
-        x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
+def policy(net: Network, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
 ) -> tuple[mjx.Data, jnp.ndarray]:
     # under this policy the cost function is quite important the cost that works is:
     # Q = diag([0, 0]) or Q = diag([10, 0.01]) and R = diag([0.01]) and QF = diag([10, 0.01])
+    x = state_encoder(mx,dx)
+    t = jnp.expand_dims(dx.time, axis=0)
     act_id = mx.actuator_trnid[:, 0]
     M = mjx.full_m(mx, dx)
     invM = jnp.linalg.inv(M)
@@ -45,16 +46,19 @@ def policy(
     dx = dx.replace(ctrl=dx.ctrl.at[:].set(noisy_u))
     return dx, noisy_u
 
-def run_cost(x: jnp.ndarray) -> jnp.ndarray:
+def run_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     # x^T Q x
+    x = state_encoder(mx,dx)
     return  jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0, 0])), x))
 
-def terminal_cost(x: jnp.ndarray) -> jnp.ndarray:
+def terminal_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     # x^T Q_f x
+    x = state_encoder(mx,dx)
     return 10*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10, 0.01])), x))
 
-def control_cost(x: jnp.ndarray) -> jnp.ndarray:
+def control_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     # u^T R u
+    x = dx.ctrl
     return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0.01])), x))
 
 def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
@@ -65,8 +69,8 @@ def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
 
     return xinits
 
-def state_encoder(x: jnp.ndarray) -> jnp.ndarray:
-    return x
+def state_encoder(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
+    return jnp.concatenate([dx.qpos, dx.qvel], axis=0)
 
 def state_decoder(x: jnp.ndarray) -> jnp.ndarray:
     return x
@@ -75,6 +79,10 @@ def gen_network(seed: int) -> Network:
     key = jax.random.PRNGKey(seed)
     return Policy([3, 64, 64, 1], key)
 
+def gen_model() -> mujoco.MjModel:
+    """ Generate MjModel.
+    """
+    return mujoco.MjModel.from_xml_path(model_path)
 
 ctx = Context(
     Config(
@@ -83,12 +91,12 @@ ctx = Context(
         seed=0,
         nsteps=100,
         epochs=1000,
-        batch=64,
+        batch=2,
         samples=1,
         eval=10,
         dt=0.01,
-        path=model_path,
-        mx=mjx.put_model(mujoco.MjModel.from_xml_path(model_path)),
+        mx= mjx.put_model(gen_model()),
+        gen_model=gen_model,
     ),
     Callbacks(
         run_cost=run_cost,

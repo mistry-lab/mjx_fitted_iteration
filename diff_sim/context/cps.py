@@ -30,24 +30,28 @@ class Policy(Network):
         return self.layers[-1](x)
 
 
-def policy(
-        x: jnp.ndarray, t: jnp.ndarray, net: Network, cfg: Config, mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray
+def policy(net: Network, mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray
 ) -> tuple[mjx.Data, jnp.ndarray]:
+    x = state_encoder(mx,dx)
+    t = jnp.expand_dims(dx.time, axis=0)
     # returns the updated data and the control
     u = net(x, t)
     dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
     return dx, u
 
-def run_cost(x: jnp.ndarray) -> jnp.ndarray:
+def run_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     # x^T Q x
+    x = state_encoder(mx,dx)
     return  jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0., 0., 0., 0])), x))
 
-def terminal_cost(x: jnp.ndarray) -> jnp.ndarray:
+def terminal_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     # x^T Q_f x
+    x = state_encoder(mx,dx)
     return 10*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([25, 100, 0.25, 1])), x))
 
-def control_cost(x: jnp.ndarray) -> jnp.ndarray:
+def control_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     # u^T R u
+    x = dx.ctrl
     return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0.001])), x))
 
 def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
@@ -60,13 +64,17 @@ def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
     return xinits
 
 
-def coder(x: jnp.ndarray) -> jnp.ndarray:
-    # encode and decode the state. Do nothing in this case
+def state_encoder(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
+    return jnp.concatenate([dx.qpos, dx.qvel], axis=0)
+
+def state_decoder(x: jnp.ndarray) -> jnp.ndarray:
     return x
 
 def gen_network(seed: int) -> Network:
     return Policy([5, 128, 128, 1], jax.random.PRNGKey(seed))
 
+def gen_model() -> mujoco.MjModel:
+    return mujoco.MjModel.from_xml_path(model_path)
 
 ctx = Context(
     cfg=Config(
@@ -75,19 +83,20 @@ ctx = Context(
         seed=0,
         nsteps=125,
         epochs=400,
-        batch=1000,
+        batch=64,
         samples=1,
         eval=10,
         dt=0.01,
-        path=model_path,
-        mx=mjx.put_model(mujoco.MjModel.from_xml_path(model_path))),
+        mx= mjx.put_model(gen_model()),
+        gen_model=gen_model,
+    ),
     cbs=Callbacks(
         run_cost= run_cost,
         terminal_cost= terminal_cost,
         control_cost= control_cost,
         init_gen= init_gen,
-        state_encoder= coder,
-        state_decoder= coder,
+        state_encoder= state_encoder,
+        state_decoder= state_decoder,
         gen_network=gen_network,
         controller=policy,
         loss_func=loss_fn_policy_stoch
