@@ -21,8 +21,10 @@ def loss_fn_policy_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx:
             We compute the sum of the costs over the entire trajectory and average it over the batch
             loss = 1/B * sum_{b=1}^{B} sum_{t=1}^{T} cost(x_{b,t}, u_{b,t})
     """
+    from jax import numpy as jnp
     model = eqx.combine(params, static)
-    _,_,costs,_ = controlled_simulate(x_init, ctx, model, user_key) #shape: (B, T, 1)
+    x,ctrls,costs,_ = controlled_simulate(x_init, ctx, model, user_key) #shape: (B, T, 1)
+    # jax.debug.breakpoint()
     costs = jnp.sum(costs, axis=1)
     costs = jnp.mean(costs)
     return costs, costs

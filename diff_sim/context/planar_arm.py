@@ -13,14 +13,14 @@ model_path = os.path.join(os.path.dirname(__file__), '../xmls/planar_arm.xml')
 __cfg = Config(
     lr=0,
     seed=0,
-    batch=8,
-    samples=4,
+    batch=1,
+    samples=1,
     epochs=1000,
     eval=10,
     num_gpu=1,
     path=model_path,
-    dt=0.01,
-    nsteps=350,
+    dt=0.005,
+    nsteps=200,
     mx=mjx.put_model(mujoco.MjModel.from_xml_path(model_path)),
 )
 
@@ -63,7 +63,7 @@ def policy(
     t = jnp.expand_dims(dx.time, axis=0)
     # noise = 0.1 * jax.random.normal(policy_key, (mx.nu,))
     u = net(x, t) # + noise
-    jax.debug.breakpoint()
+    # jax.debug.breakpoint()    
     dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
     return dx, u
 
