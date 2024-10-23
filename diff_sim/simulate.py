@@ -28,8 +28,7 @@ def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network, key: jn
     def step(carry, _):
         dx, key = carry
         key, subkey = jax.random.split(key)
-        x = ctx.cbs.state_encoder(mx,dx)
-        dx, u = ctx.cbs.controller(net, ctx, mx, dx, subkey)
+        dx, u = ctx.cbs.controller(net, mx, dx, subkey)
         cost = cost_fn(mx, dx)
         dx = mjx.step(mx, dx) # Dynamics function
         x = ctx.cbs.state_encoder(mx,dx)

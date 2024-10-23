@@ -8,7 +8,7 @@ from mujoco import mjx
 from diff_sim.loss_funcs import loss_fn_policy_stoch, loss_fn_td_stoch, loss_fn_td_det, loss_fn_policy_det
 from diff_sim.context.meta_context import Config, Callbacks, Context
 from diff_sim.nn.base_nn import Network
-from utils.math_helper import quaternion_difference, random_quaternion
+from diff_sim.utils.math_helper import quaternion_difference, random_quaternion
 
 model_path = os.path.join(os.path.dirname(__file__), '../xmls/shadow_hand/scene_right.xml')
 
@@ -32,9 +32,10 @@ class Policy(Network):
         return self.layers[-1](x).squeeze()
 
 
-def policy(net: Network, ctx: Context, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
+# TODO: Remove context from anything that is defined in this file as anything s
+def policy(net: Network, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
 ) -> tuple[mjx.Data, jnp.ndarray]:
-    x = ctx.cbs.state_encoder(mx,dx)
+    x = state_encoder(mx, dx)
     t = jnp.expand_dims(dx.time, axis=0)
     u = 0.01*+net(x, t) + dx.ctrl
     u += 0.002 * jax.random.normal(policy_key, u.shape)
@@ -44,7 +45,7 @@ def policy(net: Network, ctx: Context, mx: mjx.Model, dx: mjx.Data, policy_key: 
     dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
     return dx, u
 
-def parse_data(name,mx,dx):
+def parse_sensordata(name, mx, dx):
     id = mjx.name2id(mx, mujoco.mjtObj.mjOBJ_SENSOR, name)
     i = mx.sensor_adr[id]
     dim = mx.sensor_dim[id]
@@ -59,19 +60,19 @@ def run_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     (4): Object angular velocity
     (5): hand joint velocity
     """
-    pos = parse_data("object_position",mx,dx)
-    pos_ref = parse_data("palm_position",mx,dx)
+    pos = parse_sensordata("object_position", mx, dx)
+    pos_ref = parse_sensordata("palm_position", mx, dx)
     cpos = 0.1*jnp.sum((pos - pos_ref)**2)
 
-    quat = parse_data("object_orientation",mx,dx)
-    quat_ref = parse_data("goal_orientation",mx,dx)
+    quat = parse_sensordata("object_orientation", mx, dx)
+    quat_ref = parse_sensordata("goal_orientation", mx, dx)
     # quat_ref = jnp.array([1.,0.,0.,0.])
     cquat = 0.5*jnp.sum(quaternion_difference(quat, quat_ref)**2)
 
-    vel = parse_data("object_linear_velocity",mx,dx)
+    vel = parse_sensordata("object_linear_velocity", mx, dx)
     cvel = 0.05*jnp.sum(vel**2)
 
-    ang_vel = parse_data("object_angular_velocity",mx,dx)
+    ang_vel = parse_sensordata("object_angular_velocity", mx, dx)
     cang_vel = 0.05*jnp.sum(ang_vel**2)
 
     cjoint_pos = 0.2*jnp.sum(dx.qpos[:24]**2) 
@@ -89,19 +90,19 @@ def terminal_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     (5): Hand joint position around ref (0 vector)
     (6): Hand joint velocity
     """
-    pos = parse_data("object_position",mx,dx)
-    pos_ref = parse_data("palm_position",mx,dx)
+    pos = parse_sensordata("object_position", mx, dx)
+    pos_ref = parse_sensordata("palm_position", mx, dx)
     cpos = 0.5*jnp.sum((pos - pos_ref)**2)
 
-    quat = parse_data("object_orientation",mx,dx)
-    quat_ref = parse_data("goal_orientation",mx,dx)
+    quat = parse_sensordata("object_orientation", mx, dx)
+    quat_ref = parse_sensordata("goal_orientation", mx, dx)
     # quat_ref = jnp.array([1.,0.,0.,0.])
     cquat = 2.*jnp.sum(quaternion_difference(quat, quat_ref)**2)
 
-    vel = parse_data("object_linear_velocity",mx,dx)
+    vel = parse_sensordata("object_linear_velocity", mx, dx)
     cvel = 0.25*jnp.sum(vel**2)
 
-    ang_vel = parse_data("object_angular_velocity",mx,dx)
+    ang_vel = parse_sensordata("object_angular_velocity", mx, dx)
     cang_vel = 0.25*jnp.sum(ang_vel**2)
 
     cjoint_pos = 0.2*jnp.sum(dx.qpos[:24]**2)    
@@ -166,12 +167,9 @@ def gen_network(seed: int) -> Network:
     key = jax.random.PRNGKey(seed)
     return Policy([69, 64, 64, 24], key)
 
-
+# TODO:
 def gen_model() -> mujoco.MjModel:
-    """ Generate both MjModel and MJX Model.
-    """
     m = mujoco.MjModel.from_xml_path(model_path)
-    
     # Modify reference position. (qpos - qpos0)
     m.qpos0[:24] = -np.array([
         -0.056, 0.014, -0.077, 0.55, 0.91, 1.1, 0.052, 0.7, 1, 0.54,
@@ -180,6 +178,7 @@ def gen_model() -> mujoco.MjModel:
     
     return m
 
+# TODO mx should not be needed in this context this means make step should be modified
 ctx = Context(
     Config(
         lr=4e-3,
@@ -187,7 +186,7 @@ ctx = Context(
         seed=0,
         nsteps=400,
         epochs=1000,
-        batch=32,
+        batch=8,
         samples=1,
         eval=10,
         dt=0.005,

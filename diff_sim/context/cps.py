@@ -30,9 +30,9 @@ class Policy(Network):
         return self.layers[-1](x)
 
 
-def policy(net: Network, ctx: Context, mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray
+def policy(net: Network, mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray
 ) -> tuple[mjx.Data, jnp.ndarray]:
-    x = ctx.cbs.state_encoder(mx,dx)
+    x = state_encoder(mx,dx)
     t = jnp.expand_dims(dx.time, axis=0)
     # returns the updated data and the control
     u = net(x, t)
@@ -74,8 +74,6 @@ def gen_network(seed: int) -> Network:
     return Policy([5, 128, 128, 1], jax.random.PRNGKey(seed))
 
 def gen_model() -> mujoco.MjModel:
-    """ Generate MjModel.
-    """
     return mujoco.MjModel.from_xml_path(model_path)
 
 ctx = Context(
