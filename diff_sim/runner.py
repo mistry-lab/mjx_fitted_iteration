@@ -49,10 +49,15 @@ if __name__ == '__main__':
             make_step = net.make_step_multi_gpu if ctx.cfg.num_gpu > 1 else net.make_step
 
             # Run through the epochs and log the loss
+            # make_data that give batch of dx
+            # init data
             for e in (es := trange(ctx.cfg.epochs)):
                 key, xkey, tkey, user_key = jax.random.split(key, num = 4)
                 x_inits = ctx.cbs.init_gen(ctx.cfg.batch * ctx.cfg.samples, xkey)
                 net, opt_state, loss_value, traj_cost = make_step(optim, net, opt_state, x_inits, ctx, user_key)
+                # take the return dx and the termination indexes
+                # given the above do on_terminate
+                # for those indicies from above we clear and we init data
                 log_data = {"loss": round(loss_value.item(), 3), "Traj Cost": round(traj_cost.item(), 3)}
                 wandb.log(log_data)
                 es.set_postfix(log_data)

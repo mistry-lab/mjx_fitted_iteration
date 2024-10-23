@@ -112,10 +112,3 @@ class Context:
         assert cfg.num_gpu <= jax.device_count()
         assert (cfg.batch * cfg.samples) % cfg.num_gpu == 0
 
-# Another possible option : 
-# Create a .model attribute in ctx.cfg which contain both mj and mjx model.
-# class Model:
-#     def __init__(self, mjx_model:mjx.Model):
-#         # self.m = mj_model # Mujoco model
-#         self.mx = mjx_model # MJX model
-
