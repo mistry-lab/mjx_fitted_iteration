@@ -43,9 +43,12 @@ def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network, key: jn
         t = jnp.concatenate([jnp.array([ctx.cfg.dt]), ts], axis=0)
         tcost = ctx.cbs.terminal_cost(mx,dx) # Terminal cost
         costs = jnp.concatenate([costs, tcost.reshape(-1)], axis=0)
-        terminated = jnp.concatenate([terminated, jnp.array([False])])
+        termination_mask = jnp.concatenate([
+            jnp.array([False]),  # Ignore the first cost
+            jnp.cumsum(terminated) > 0  # True from first termination onward
+        ], axis=0)
         # From the first terminated index, set the following costs to 0 (included index)
-        costs = costs * jnp.logical_not(terminated)        
+        costs = costs * jnp.logical_not(termination_mask)        
         return x, u, costs, t #return dx as well return termination indicies as well
 
     return rollout(x_inits)
