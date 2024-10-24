@@ -80,9 +80,11 @@ def gen_network(seed: int) -> Network:
     return Policy([3, 64, 64, 1], key)
 
 def gen_model() -> mujoco.MjModel:
-    """ Generate MjModel.
-    """
     return mujoco.MjModel.from_xml_path(model_path)
+
+def is_terminal(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
+    return jnp.array([jnp.any(jnp.abs(dx.qpos[0]) > 3.0)])
+
 
 ctx = Context(
     Config(
@@ -107,6 +109,7 @@ ctx = Context(
         state_decoder=state_decoder,
         gen_network=gen_network,
         controller=policy,
-        loss_func=loss_fn_td_stoch
+        loss_func=loss_fn_td_stoch,
+        is_terminal=is_terminal
     )
 )

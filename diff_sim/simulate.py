@@ -29,19 +29,23 @@ def controlled_simulate(x_inits:jnp.ndarray, ctx: Context, net: Network, key: jn
         dx, u = ctx.cbs.controller(net, mx, dx, subkey)
         cost = cost_fn(mx, dx)
         dx = mjx.step(mx, dx) # Dynamics function
+        terminated = ctx.cbs.is_terminal(mx, dx)
         x = ctx.cbs.state_encoder(mx,dx)
         t = jnp.expand_dims(dx.time, axis=0)
-        return (dx, key), jnp.concatenate([x, dx.ctrl, cost, t], axis=0)
+        return (dx, key), jnp.concatenate([x, dx.ctrl, cost, t, terminated], axis=0)
 
     @jax.vmap
     def rollout(x_init):
         dx = set_init(x_init)
         (dx,_), res = jax.lax.scan(step, (dx, key), None, length=ctx.cfg.nsteps-1)
-        x, u, costs, ts = res[...,:-mx.nu-2], res[...,-mx.nu-2:-2], res[...,-2], res[...,-1]
+        x, u, costs, ts, terminated = res[...,:-mx.nu-3], res[...,-mx.nu-3:-3], res[...,-3], res[...,-2], res[...,-1]
         x = jnp.concatenate([x_init.reshape(1,-1), x], axis=0)
         t = jnp.concatenate([jnp.array([ctx.cfg.dt]), ts], axis=0)
         tcost = ctx.cbs.terminal_cost(mx,dx) # Terminal cost
         costs = jnp.concatenate([costs, tcost.reshape(-1)], axis=0)
+        # from the first terminated index set that and all the following costs to 0
+        first_terminate = jnp.where(terminated)[0][0]
+        costs = jnp.where(jnp.arange(costs.size) >= first_terminate, 0.0, costs)
         return x, u, costs, t #return dx as well return termination indicies as well
 
     return rollout(x_inits)

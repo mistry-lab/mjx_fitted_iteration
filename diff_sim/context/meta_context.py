@@ -39,9 +39,9 @@ class Callbacks:
             state_encoder: Callable[[mjx.Model,mjx.Data], jnp.ndarray],
             state_decoder: Callable[[jnp.ndarray], jnp.ndarray],
             gen_network: Callable[[int], Network],
-            controller: Callable[[Network, mjx.Model, mjx.Data, jnp.ndarray],
-            tuple[mjx.Data, jnp.ndarray]],
-            loss_func: Callable[[PyTree, PyTree, jnp.ndarray, Context, jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray]]
+            controller: Callable[[Network, mjx.Model, mjx.Data, jnp.ndarray], tuple[mjx.Data, jnp.ndarray]],
+            loss_func: Callable[[PyTree, PyTree, jnp.ndarray, Context, jnp.ndarray], tuple[jnp.ndarray, jnp.ndarray]],
+            is_terminal: Callable[[mjx.Model, mjx.Data], jnp.ndarray]
     ):
         self.run_cost = run_cost           # running cost for trajectories
         self.terminal_cost = terminal_cost # terminal cost for trajectories
@@ -52,6 +52,7 @@ class Callbacks:
         self.gen_network = gen_network     # generates the neural network (policy or value). This can be a checkpoint
         self.controller = controller       # controller function that is called at each time step
         self.loss_func = loss_func         # loss function for the over all learning problem
+        self.is_terminal = is_terminal     # terminal condition for the episode
         self._validate_callbacks()         # type check the callbacks
 
 

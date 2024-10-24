@@ -17,7 +17,7 @@ config.update('jax_default_matmul_precision', 'high')
 if __name__ == '__main__':
     try:
         parser = argparse.ArgumentParser()
-        parser.add_argument("--task", help="task name", default="shadow_hand")
+        parser.add_argument("--task", help="task name", default="double_integrator")
         parser.add_argument("--wb_project", help="wandb project name", default="not_named")
         parser.add_argument("--headless", action="store_true", help="Disable visualization")
         parser.add_argument(
