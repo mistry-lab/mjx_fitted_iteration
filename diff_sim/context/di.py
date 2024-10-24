@@ -93,7 +93,7 @@ ctx = Context(
         seed=0,
         nsteps=100,
         epochs=1000,
-        batch=2,
+        batch=8,
         samples=1,
         eval=10,
         dt=0.01,
@@ -109,7 +109,7 @@ ctx = Context(
         state_decoder=state_decoder,
         gen_network=gen_network,
         controller=policy,
-        loss_func=loss_fn_td_stoch,
+        loss_func=loss_fn_policy_det,
         is_terminal=is_terminal
     )
 )

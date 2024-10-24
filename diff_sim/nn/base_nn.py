@@ -25,15 +25,15 @@ class Network(eqx.Module, ABC):
 
     @staticmethod
     @eqx.filter_jit
-    def make_step(optim, model, state, x_init, ctx, user_key):
+    def make_step(dxs, optim, model, state, ctx, user_key):
         """
         Performs a single optimization step.
-r
+
         Args:
+            dxs: ..
             optim: Optimizer instance (e.g., from optax).
             model (BasePolicy): The model to update.
             state: Optimizer state.
-            x_init: Initial input data.
             ctx: Context object containing additional information like loss function.
 
         Returns:
@@ -41,7 +41,7 @@ r
         """
         params, static = eqx.partition(model, eqx.is_array)
         (loss_value, traj_costs), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(
-            params, static, x_init, ctx, user_key
+            params, static, dxs, ctx, user_key
         )
         updates, state = optim.update(grads, state, model)
         model = eqx.apply_updates(model, updates)
@@ -50,6 +50,7 @@ r
 
     @staticmethod
     @eqx.filter_jit
+    # TODO with dxs
     def make_step_multi_gpu(optim, model, state, x_init, ctx, user_key):
         """
         Performs a single optimization step on multiple GPUs.

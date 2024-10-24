@@ -1,17 +1,18 @@
 import jax
 import jax.numpy as jnp
 import equinox as eqx
+import mujoco.mjx as mjx
 from jaxtyping import PyTree
 from diff_sim.context.meta_context import Context
 from diff_sim.simulate import controlled_simulate
 
-def loss_fn_policy_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context, user_key: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+def loss_fn_policy_det(params: PyTree, static: PyTree, dxs:mjx.Data, ctx: Context, user_key: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
     """
         Loss function for the direct analytical policy optimization problem given deterministic dynamics
         Args:
             params: PyTree, model parameters
             static: PyTree, static parameters
-            x_init: jnp.ndarray, initial state
+            dxs: mjx.Data
             ctx: Context, context object
             user_key: jnp.ndarray, random user_key for sub calls
         Returns:
@@ -22,7 +23,7 @@ def loss_fn_policy_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx:
             loss = 1/B * sum_{b=1}^{B} sum_{t=1}^{T} cost(x_{b,t}, u_{b,t})
     """
     model = eqx.combine(params, static)
-    _,_,costs,_ = controlled_simulate(x_init, ctx, model, user_key) #shape: (B, T, 1)
+    dxs,_,_,costs,_,terminated = controlled_simulate(dxs, ctx, model, user_key) #shape: (B, T, 1)
     costs = jnp.sum(costs, axis=1)
     costs = jnp.mean(costs)
     return costs, costs
@@ -46,7 +47,7 @@ def loss_fn_policy_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ct
             loss = 1/B * sum_{b=1}^{B} E[sum_{t=1}^{T} cost(x_{b,t}, u_{b,t})]
     """
     model = eqx.combine(params, static)
-    _,_,costs,_ = controlled_simulate(x_init, ctx, model, user_key)
+    _,_,costs,_,terminated = controlled_simulate(x_init, ctx, model, user_key)
     costs = costs.reshape(ctx.cfg.batch, ctx.cfg.samples, ctx.cfg.nsteps)
     sum_costs = jnp.sum(costs, axis=-1)
     exp_sum_costs = jnp.mean(sum_costs, axis=-1)
@@ -83,7 +84,7 @@ def loss_fn_td_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Con
         return jnp.sum(jnp.square(v_diff_cost)) + jnp.square(v_term_cost)
     
     model = eqx.combine(params, static)
-    x,_,costs,t = controlled_simulate(x_init, ctx, model, user_key)
+    x,_,costs,t,terminated = controlled_simulate(x_init, ctx, model, user_key)
     B, T, _ = x.shape
     diff, term = v_diff(x,t)
     traj_costs = jnp.mean(jnp.sum(costs, axis=-1))
@@ -125,7 +126,7 @@ def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: C
         return jnp.mean(jnp.sum(jnp.square(v_diff_cost), axis=-1)) + jnp.square(v_term_cost)
 
     model = eqx.combine(params, static)
-    x, _, costs, t = controlled_simulate(x_init, ctx, model, user_key)
+    x, _, costs, t,terminated = controlled_simulate(x_init, ctx, model, user_key)
     values = compute_values(x, t).reshape(ctx.cfg.batch, ctx.cfg.samples, ctx.cfg.nsteps)
     diff, term = v_diff_stoch(values) # shapes: (B, S, T-1), (B)
     costs  = costs.reshape(ctx.cfg.batch, ctx.cfg.samples, ctx.cfg.nsteps)
@@ -157,6 +158,6 @@ def loss_fn_target_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx:
         return jnp.sum(jnp.square(pred - targets))
 
     model = eqx.combine(params, static)
-    x,_,costs =  controlled_simulate(x_init, ctx, model, user_key)
+    x,_,costs,terminated =  controlled_simulate(x_init, ctx, model, user_key)
     traj_costs = jnp.mean(jnp.sum(costs, axis=1))
     return jnp.mean(cost(x,costs)), traj_costs
