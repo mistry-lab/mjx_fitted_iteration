@@ -12,6 +12,31 @@ from diff_sim.utils.math_helper import quaternion_difference, random_quaternion
 
 model_path = os.path.join(os.path.dirname(__file__), '../xmls/shadow_hand/scene_right.xml')
 
+# TODO:
+def gen_model() -> mujoco.MjModel:
+    m = mujoco.MjModel.from_xml_path(model_path)
+    # Modify reference position. (qpos - qpos0)
+    m.qpos0[:24] = -np.array([
+        -0.056, 0.014, -0.077, 0.55, 0.91, 1.1, 0.052, 0.7, 1, 0.54,
+        0.062, 0.59, 1.1, 0.52, 0.22, -0.081, 0.39, 1.1, 0.99, -0.24,
+        0.63, 0.2, 0.7, 0.65])
+    
+    return m
+    
+_cfg = Config(
+        lr=4e-3,
+        num_gpu=1,
+        seed=0,
+        nsteps=24,
+        ntotal=800,
+        epochs=1000,
+        batch=32,
+        samples=1,
+        eval=10,
+        dt=0.005,
+        mx= mjx.put_model(gen_model()),
+        gen_model=gen_model,
+    )
 
 class Policy(Network):
     layers: list
@@ -151,7 +176,7 @@ def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
         object_vel_broadcast,  # Shape (total_batch, 3)
         object_ang_vel_broadcast,  # Shape (total_batch, 3)
         goal_ang_vel_broadcast  # Shape (total_batch, 3)
-    ], axis=1).squeeze()
+    ], axis=1)
 
     return xinits
 
@@ -167,32 +192,15 @@ def gen_network(seed: int) -> Network:
     key = jax.random.PRNGKey(seed)
     return Policy([69, 64, 64, 24], key)
 
-# TODO:
-def gen_model() -> mujoco.MjModel:
-    m = mujoco.MjModel.from_xml_path(model_path)
-    # Modify reference position. (qpos - qpos0)
-    m.qpos0[:24] = -np.array([
-        -0.056, 0.014, -0.077, 0.55, 0.91, 1.1, 0.052, 0.7, 1, 0.54,
-        0.062, 0.59, 1.1, 0.52, 0.22, -0.081, 0.39, 1.1, 0.99, -0.24,
-        0.63, 0.2, 0.7, 0.65])
-    
-    return m
+def is_terminal(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
+    pos = parse_sensordata("object_position", mx, dx)
+    # jax.debug.breakpoint()
+
+    return  jnp.array([jnp.logical_or(pos[2] < -0.05, (dx.time / mx.opt.timestep) > _cfg.ntotal)])
 
 # TODO mx should not be needed in this context this means make step should be modified
 ctx = Context(
-    Config(
-        lr=4e-3,
-        num_gpu=1,
-        seed=0,
-        nsteps=400,
-        epochs=1000,
-        batch=8,
-        samples=1,
-        eval=10,
-        dt=0.005,
-        mx= mjx.put_model(gen_model()),
-        gen_model=gen_model,
-    ),
+    _cfg,
     Callbacks(
         run_cost=run_cost,
         terminal_cost=terminal_cost,
@@ -202,6 +210,7 @@ ctx = Context(
         state_decoder=state_decoder,
         gen_network=gen_network,
         controller=policy,
-        loss_func=loss_fn_policy_stoch
+        loss_func=loss_fn_policy_det,
+        is_terminal=is_terminal
     )
 )

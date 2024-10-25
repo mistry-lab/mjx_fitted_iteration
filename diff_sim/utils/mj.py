@@ -7,6 +7,7 @@ import jax
 from diff_sim.context.meta_context import Context
 from diff_sim.simulate import controlled_simulate
 from diff_sim.nn.base_nn import Network
+import equinox as eqx
 
 def set_init(x, mx):
     dx = mjx.make_data(mx)
@@ -17,6 +18,7 @@ def set_init(x, mx):
     return mjx.step(mx, dx)
 set_init_vmap = jax.jit(jax.vmap(set_init,in_axes=(0, None)))
 
+
 # TODO pass the 2 dxs for the simulation and create themn in runner. 
 def visualise_policy(
         d: mujoco.MjData, m: mujoco.MjModel, viewer: mujoco.viewer.Handle,
@@ -25,7 +27,7 @@ def visualise_policy(
     key, xkey, tkey, user_key = jax.random.split(key, num=4)
     x_inits = ctx.cbs.init_gen(2, xkey)
     dxs = set_init_vmap(x_inits, ctx.cfg.mx)
-    _, x, _, _, _, _ = controlled_simulate(dxs, ctx, net, tkey)
+    _, x, _, _, _, _ = eqx.filter_jit(controlled_simulate)(dxs, ctx, net, tkey, 400)
     x = jax.vmap(jax.vmap(ctx.cbs.state_decoder))(x)
     x = np.array(x.squeeze())
     for b in range(x.shape[0]):

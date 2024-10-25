@@ -10,6 +10,24 @@ from diff_sim.nn.base_nn import Network
 
 model_path = os.path.join(os.path.dirname(__file__), '../xmls/doubleintegrator.xml')
 
+def gen_model() -> mujoco.MjModel:
+    return mujoco.MjModel.from_xml_path(model_path)
+
+_cfg = Config(
+    lr=4e-3,
+    num_gpu=1,
+    seed=0,
+    nsteps=24,
+    ntotal=200,
+    epochs=1000,
+    batch=8,
+    samples=1,
+    eval=10,
+    dt=0.01,
+    mx= mjx.put_model(gen_model()),
+    gen_model=gen_model,
+)
+
 class Policy(Network):
     layers: list
     act: callable
@@ -79,27 +97,12 @@ def gen_network(seed: int) -> Network:
     key = jax.random.PRNGKey(seed)
     return Policy([3, 64, 64, 1], key)
 
-def gen_model() -> mujoco.MjModel:
-    return mujoco.MjModel.from_xml_path(model_path)
-
 def is_terminal(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
-    return jnp.array([jnp.any(jnp.abs(dx.qpos[0]) > 3.0)])
+    return jnp.array([(dx.time / mx.opt.timestep) > _cfg.ntotal])
 
 
 ctx = Context(
-    Config(
-        lr=4e-3,
-        num_gpu=1,
-        seed=0,
-        nsteps=100,
-        epochs=1000,
-        batch=8,
-        samples=1,
-        eval=10,
-        dt=0.01,
-        mx= mjx.put_model(gen_model()),
-        gen_model=gen_model,
-    ),
+    _cfg,
     Callbacks(
         run_cost=run_cost,
         terminal_cost=terminal_cost,

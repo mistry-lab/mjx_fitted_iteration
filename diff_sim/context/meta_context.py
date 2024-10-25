@@ -14,13 +14,14 @@ from diff_sim.nn.base_nn import Network
 
 @partial(jax.tree_util.register_dataclass,
          data_fields=['mx'],
-         meta_fields=['lr', 'num_gpu', 'seed', 'nsteps', 'epochs', 'batch', 'samples', 'eval', 'dt', "gen_model"])
+         meta_fields=['lr', 'num_gpu', 'seed', 'nsteps', 'ntotal', 'epochs', 'batch', 'samples', 'eval', 'dt', "gen_model"])
 @dataclass(frozen=True)
 class Config:
     lr: float     # learning rate
     num_gpu: int  # number of devices
     seed: int     # random seed
-    nsteps: int   # simulation steps
+    nsteps: int   # mini-episode steps
+    ntotal: int   # total episode length
     epochs: int   # training epochs
     batch: int    # batch size (number simulations)
     samples: int  # number of simulations per initial state

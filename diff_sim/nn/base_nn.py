@@ -40,13 +40,13 @@ class Network(eqx.Module, ABC):
             Tuple[BasePolicy, state, float]: Updated model, updated state, and loss value.
         """
         params, static = eqx.partition(model, eqx.is_array)
-        (loss_value, traj_costs), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(
+        (loss_value, res), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(
             params, static, dxs, ctx, user_key
         )
         updates, state = optim.update(grads, state, model)
         model = eqx.apply_updates(model, updates)
 
-        return model, state, loss_value, traj_costs
+        return model, state, loss_value, res
 
     @staticmethod
     @eqx.filter_jit

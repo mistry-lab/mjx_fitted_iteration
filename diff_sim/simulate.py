@@ -6,7 +6,7 @@ from diff_sim.context.meta_context import Context
 from diff_sim.nn.base_nn import Network
 
 @eqx.filter_jit
-def controlled_simulate(dxs:mjx.Data, ctx: Context, net: Network, key: jnp.ndarray):
+def controlled_simulate(dxs:mjx.Data, ctx: Context, net: Network, key: jnp.ndarray, ntime: int):
     mx = ctx.cfg.mx
 
     def cost_fn(mx:mjx.Model , dx:mjx.Data):
@@ -29,7 +29,7 @@ def controlled_simulate(dxs:mjx.Data, ctx: Context, net: Network, key: jnp.ndarr
     @jax.vmap
     def rollout(dx):
         x_init = ctx.cbs.state_encoder(mx,dx)
-        (dx,_), res = jax.lax.scan(step, (dx, key), None, length=ctx.cfg.nsteps-1)
+        (dx,_), res = jax.lax.scan(step, (dx, key), None, length=ntime-1)
         x, u, costs, ts, terminated = res[...,:-mx.nu-3], res[...,-mx.nu-3:-3], res[...,-3], res[...,-2], res[...,-1]
         x = jnp.concatenate([x_init.reshape(1,-1), x], axis=0)
         t = jnp.concatenate([jnp.array([ctx.cfg.dt]), ts], axis=0)
@@ -40,7 +40,7 @@ def controlled_simulate(dxs:mjx.Data, ctx: Context, net: Network, key: jnp.ndarr
             jnp.cumsum(terminated) > 0  # True from first termination onward
         ], axis=0)
         # From the first terminated index, set the following costs to 0 (included index)
-        costs = costs * jnp.logical_not(termination_mask)        
+        costs = costs * jnp.logical_not(termination_mask)       
         return dx, x, u, costs, t, jnp.any(termination_mask) #return dx as well return termination indicies as well
 
     return rollout(dxs)

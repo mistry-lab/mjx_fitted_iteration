@@ -7,6 +7,7 @@ import equinox as eqx
 import optax
 from jax import config
 import jax
+import jax.numpy as jnp
 import contextlib  # Added for handling headless mode
 from diff_sim.context.tasks import ctxs
 from diff_sim.utils.tqdm import trange
@@ -24,10 +25,18 @@ def set_init(x, mx):
     return mjx.step(mx, dx)
 set_init_vmap = jax.jit(jax.vmap(set_init,in_axes=(0, None)))
 
+
+def replace_indices(data: mjx.Data, indices_to_replace: jax.Array, new_data: mjx.Data) -> mjx.Data:
+    def process_field(field, new_field):
+        field = field.at[indices_to_replace].set(new_field)
+        return field
+    updated_data = jax.tree_util.tree_map(process_field, data, new_data)
+    return updated_data
+
 if __name__ == '__main__':
     try:
         parser = argparse.ArgumentParser()
-        parser.add_argument("--task", help="task name", default="double_integrator")
+        parser.add_argument("--task", help="task name", default="shadow_hand")
         parser.add_argument("--wb_project", help="wandb project name", default="not_named")
         parser.add_argument("--headless", action="store_true", help="Disable visualization")
         parser.add_argument(
@@ -68,11 +77,21 @@ if __name__ == '__main__':
             for e in (es := trange(ctx.cfg.epochs)):
                 key, xkey, tkey, user_key = jax.random.split(key, num = 4)
                 # x_inits = ctx.cbs.init_gen(ctx.cfg.batch * ctx.cfg.samples, xkey)
-                net, opt_state, loss_value, traj_cost = make_step(dxs, optim, net, opt_state, ctx, user_key)
+                net, opt_state, loss_value, res = make_step(dxs, optim, net, opt_state, ctx, user_key)
+                traj_cost, dxs, terminated = res
                 # take the return dx and the termination indexes
                 # given the above do on_terminate
+                # Find indices where the value is True
+                indexes_to_remove = jnp.where(terminated)[0]
+                if indexes_to_remove.size > 0:
+                    key, subkey = jax.random.split(key)
+                    x_inits = ctx.cbs.init_gen(indexes_to_remove.size, subkey)
+                    new_data = set_init_vmap(x_inits, ctx.cfg.mx)
+                    dxs = replace_indices(dxs, indexes_to_remove, new_data)
+
                 # for those indicies from above we clear and we init data
-                log_data = {"loss": round(loss_value.item(), 3), "Traj Cost": round(traj_cost.item(), 3)}
+
+                log_data = {"loss": round(loss_value.item(), 3), "Traj Cost": round(traj_cost.item(), 3), "nreset": jnp.sum(terminated)}
                 wandb.log(log_data)
                 es.set_postfix(log_data)
 

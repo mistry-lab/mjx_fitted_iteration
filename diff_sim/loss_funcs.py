@@ -23,10 +23,10 @@ def loss_fn_policy_det(params: PyTree, static: PyTree, dxs:mjx.Data, ctx: Contex
             loss = 1/B * sum_{b=1}^{B} sum_{t=1}^{T} cost(x_{b,t}, u_{b,t})
     """
     model = eqx.combine(params, static)
-    dxs,_,_,costs,_,terminated = controlled_simulate(dxs, ctx, model, user_key) #shape: (B, T, 1)
+    dxs,_,_,costs,_,terminated = controlled_simulate(dxs, ctx, model, user_key, ctx.cfg.nsteps) #shape: (B, T, 1)
     costs = jnp.sum(costs, axis=1)
     costs = jnp.mean(costs)
-    return costs, costs
+    return costs, (costs, dxs, terminated)
 
 
 def loss_fn_policy_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context, user_key: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
