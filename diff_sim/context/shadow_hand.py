@@ -30,7 +30,7 @@ _cfg = Config(
         nsteps=24,
         ntotal=800,
         epochs=1000,
-        batch=32,
+        batch=2,
         samples=1,
         eval=10,
         dt=0.005,
@@ -50,8 +50,8 @@ class Policy(Network):
         self.act = jax.nn.relu
 
     def __call__(self, x, t):
-        t = t if t.ndim == 1 else t.reshape(1)
-        x = jnp.concatenate([x, t], axis=-1)
+        # t = t if t.ndim == 1 else t.reshape(1)
+        # x = jnp.concatenate([x, t], axis=-1)
         for layer in self.layers[:-1]:
             x = self.act(layer(x))
         return self.layers[-1](x).squeeze()
@@ -62,8 +62,7 @@ def policy(net: Network, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
 ) -> tuple[mjx.Data, jnp.ndarray]:
     x = state_encoder(mx, dx)
     t = jnp.expand_dims(dx.time, axis=0)
-    u = 0.01*+net(x, t) + dx.ctrl
-    u += 0.002 * jax.random.normal(policy_key, u.shape)
+    u = net(x, t)
     # u = 0.5*net(x, t)
     # u += 0.002*jax.random.normal(policy_key, u.shape)
     # Setup offset
@@ -190,13 +189,13 @@ def state_decoder(x: jnp.ndarray) -> jnp.ndarray:
 
 def gen_network(seed: int) -> Network:
     key = jax.random.PRNGKey(seed)
-    return Policy([69, 64, 64, 24], key)
+    return Policy([68, 64, 64, 24], key)
 
 def is_terminal(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     pos = parse_sensordata("object_position", mx, dx)
     # jax.debug.breakpoint()
 
-    return  jnp.array([jnp.logical_or(pos[2] < -0.05, (dx.time / mx.opt.timestep) > _cfg.ntotal)])
+    return  jnp.array([jnp.logical_or(pos[2] < -0.05, (dx.time / mx.opt.timestep) > (_cfg.ntotal-1))])
 
 # TODO mx should not be needed in this context this means make step should be modified
 ctx = Context(

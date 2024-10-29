@@ -17,10 +17,10 @@ _cfg = Config(
     lr=4e-3,
     num_gpu=1,
     seed=0,
-    nsteps=24,
-    ntotal=200,
+    nsteps=16,
+    ntotal=256,
     epochs=1000,
-    batch=8,
+    batch=100,
     samples=1,
     eval=10,
     dt=0.01,
@@ -40,8 +40,8 @@ class Policy(Network):
         self.act = jax.nn.relu
 
     def __call__(self, x, t):
-        t = t if t.ndim == 1 else t.reshape(1)
-        x = jnp.concatenate([x, t], axis=-1)
+        # t = t if t.ndim == 1 else t.reshape(1)
+        # x = jnp.concatenate([x, t], axis=-1)
         for layer in self.layers[:-1]:
             x = self.act(layer(x))
         return self.layers[-1](x).squeeze()
@@ -53,26 +53,27 @@ def policy(net: Network, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
     # Q = diag([0, 0]) or Q = diag([10, 0.01]) and R = diag([0.01]) and QF = diag([10, 0.01])
     x = state_encoder(mx,dx)
     t = jnp.expand_dims(dx.time, axis=0)
-    act_id = mx.actuator_trnid[:, 0]
-    M = mjx.full_m(mx, dx)
-    invM = jnp.linalg.inv(M)
-    dvdx = jax.jacrev(net,0)(x, t)
-    G = jnp.vstack([jnp.zeros_like(invM), invM])
-    invR = jnp.linalg.inv(jnp.diag(jnp.array([0.01])))
-    u = (-1/2 * invR @ G.T[act_id, :] @ dvdx.T).flatten()
-    noisy_u = u + 10 * jax.random.normal(policy_key, u.shape)
+    # act_id = mx.actuator_trnid[:, 0]
+    # M = mjx.full_m(mx, dx)
+    # invM = jnp.linalg.inv(M)
+    # dvdx = jax.jacrev(net,0)(x, t)
+    # G = jnp.vstack([jnp.zeros_like(invM), invM])
+    # invR = jnp.linalg.inv(jnp.diag(jnp.array([0.01])))
+    # u = (-1/2 * invR @ G.T[act_id, :] @ dvdx.T).flatten()
+    u = net(x, t)
+    noisy_u = u # + 10 * jax.random.normal(policy_key, u.shape)
     dx = dx.replace(ctrl=dx.ctrl.at[:].set(noisy_u))
     return dx, noisy_u
 
 def run_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     # x^T Q x
     x = state_encoder(mx,dx)
-    return  jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0, 0])), x))
+    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10, 0.01])), x)) * 100
 
 def terminal_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     # x^T Q_f x
     x = state_encoder(mx,dx)
-    return 10*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10, 0.01])), x))
+    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10, 0.01])), x)) * 0.0005
 
 def control_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     # u^T R u
@@ -95,10 +96,10 @@ def state_decoder(x: jnp.ndarray) -> jnp.ndarray:
 
 def gen_network(seed: int) -> Network:
     key = jax.random.PRNGKey(seed)
-    return Policy([3, 64, 64, 1], key)
+    return Policy([2, 64, 64, 1], key)
 
 def is_terminal(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
-    return jnp.array([(dx.time / mx.opt.timestep) > _cfg.ntotal])
+    return jnp.array([(dx.time / mx.opt.timestep) > (_cfg.ntotal - 1)])
 
 
 ctx = Context(
