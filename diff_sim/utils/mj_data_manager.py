@@ -15,9 +15,9 @@ class DataManager(eqx.Module):
         self._replace_indices_compiled = replace_indices
 
     def create_data(
-            self, mx: mjx.Model, ctx: Context, key: jnp.ndarray
-    ) -> Tuple[mjx.Data, jnp.ndarray]:
-        x_inits = ctx.cbs.init_gen(ctx.cfg.batch, key)
+            self, mx: mjx.Model, ctx: Context, batch: int, key: jnp.ndarray
+    ) -> mjx.Data:
+        x_inits = ctx.cbs.init_gen(batch, key)
         dxs = self._set_init_compiled(x_inits, mx)
         return dxs
 
@@ -26,7 +26,7 @@ class DataManager(eqx.Module):
     ) -> Tuple[mjx.Data, jnp.ndarray]:
         indices_to_reset = jnp.where(terminated)[0]
         if indices_to_reset.size > 0:
-            new_dxs = self.create_data(mx, ctx, key)
+            new_dxs = self.create_data(mx, ctx, indices_to_reset.size, key)
             dxs = self._replace_indices_compiled(dxs, indices_to_reset, new_dxs)
         return dxs
 

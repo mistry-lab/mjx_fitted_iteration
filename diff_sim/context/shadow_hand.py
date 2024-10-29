@@ -193,8 +193,6 @@ def gen_network(seed: int) -> Network:
 
 def is_terminal(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     pos = parse_sensordata("object_position", mx, dx)
-    # jax.debug.breakpoint()
-
     return  jnp.array([jnp.logical_or(pos[2] < -0.05, (dx.time / mx.opt.timestep) > (_cfg.ntotal-1))])
 
 # TODO mx should not be needed in this context this means make step should be modified

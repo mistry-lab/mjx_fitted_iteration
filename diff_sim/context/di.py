@@ -99,7 +99,8 @@ def gen_network(seed: int) -> Network:
     return Policy([2, 64, 64, 1], key)
 
 def is_terminal(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
-    return jnp.array([(dx.time / mx.opt.timestep) > (_cfg.ntotal - 1)])
+    return jnp.logical_or(jnp.array([(dx.time / mx.opt.timestep) > (_cfg.ntotal - 1)]),
+                          jnp.array([jnp.abs(dx.qpos[0]) > .5]))
 
 
 ctx = Context(

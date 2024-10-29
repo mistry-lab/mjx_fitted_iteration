@@ -55,7 +55,7 @@ if __name__ == '__main__':
             # make_data that give batch of dx
             key, init_key = jax.random.split(key)
             data_manager = create_data_manager()
-            dxs = data_manager.create_data(ctx.cfg.mx, ctx, init_key)
+            dxs = data_manager.create_data(ctx.cfg.mx, ctx,  ctx.cfg.batch, init_key)
             sum_loss, sum_cost, sum_reset, iter = 0, 0, 0, ctx.cfg.ntotal//ctx.cfg.nsteps
             # init data
             for e in (es := trange(ctx.cfg.epochs)):
