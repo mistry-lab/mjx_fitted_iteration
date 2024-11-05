@@ -84,7 +84,7 @@ def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
     xinits = jnp.concatenate([
         jax.random.uniform(key, (total_batch, 1), minval=-1, maxval=1),
         jax.random.uniform(key, (total_batch, 1), minval=-.7, maxval=.7)
-    ], axis=1).squeeze()
+    ], axis=1)
 
     return xinits
 
