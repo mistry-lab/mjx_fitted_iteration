@@ -27,9 +27,9 @@
         <material name="target_highlight" rgba=".6 .3 .3 .4"/>
     </asset>
 
-    <option timestep="0.01" cone="elliptic" iterations="200">
-        <flag gravity="enable"/>
-    </option>
+  <option impratio="10" iterations="1" ls_iterations="4" timestep="0.005">
+    <flag eulerdamp="disable"/>
+  </option>
 
     <default>`
         <geom solimp="0 0.9 0.01" solref=".02 1"/>
@@ -73,20 +73,4 @@
         <motor name="proximal" joint="proximal" gear="3"/>
         <motor name="distal" joint="distal" gear="1.5"/>
     </actuator>
-
-    <!-- All finger observations are functions of sensors. This is useful for finite-differencing. -->
-    <sensor>
-        <jointpos name="proximal" joint="proximal"/>
-        <jointpos name="distal" joint="distal"/>
-        <jointvel name="proximal_velocity" joint="proximal"/>
-        <jointvel name="distal_velocity" joint="distal"/>
-<!--        <jointvel name="hinge_velocity" joint="hinge"/>-->
-<!--        <framepos name="tip" objtype="site" objname="tip"/>-->
-<!--        <framepos name="spinner" objtype="xbody" objname="spinner"/>-->
-        <touch name="touchtop" site="touchtop"/>
-        <touch name="touchbottom" site="touchbottom"/>
-        <framepos name="touchtop_pos" objtype="site" objname="touchtop"/>
-        <framepos name="touchbottom_pos" objtype="site" objname="touchbottom"/>
-    </sensor>
-
 </mujoco>

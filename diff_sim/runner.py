@@ -1,7 +1,6 @@
 import argparse
 import wandb
 import mujoco
-import mujoco.mjx as mjx
 from mujoco import viewer
 import equinox as eqx
 import optax
@@ -66,8 +65,6 @@ if __name__ == '__main__':
                 sum_loss += loss_value.item()
                 sum_cost += traj_cost.item()
                 sum_reset += jnp.sum(terminated).item()
-                log_data2 = {"loss": round(loss_value.item(), 3), "Traj Cost": round(traj_cost.item(), 3), "nreset": jnp.sum(terminated)}
-                wandb.log(log_data2)
                 if e % iter == 0:
                     log_data = {"Loss avg": round(sum_loss/iter, 3), "Traj Cost avg": round(sum_cost/iter, 3), "nreset avg": sum_reset}
                     wandb.log(log_data)
@@ -80,8 +77,8 @@ if __name__ == '__main__':
                         visualise_policy(data, model, viewer, ctx, net, key)
                     name = f"{args.task}_checkpoint_{e}"
                     save_model(net, args.task, name)
-                    log_data2["latest_model"] = name
-                    es.set_postfix(log_data2)
+                    log_data["latest_model"] = name
+                    es.set_postfix(log_data)
 
     except KeyboardInterrupt:
         print("Exiting wandb...")

@@ -84,7 +84,7 @@ def loss_fn_td_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Con
         return jnp.sum(jnp.square(v_diff_cost)) + jnp.square(v_term_cost)
     
     model = eqx.combine(params, static)
-    x,_,costs,t,terminated = controlled_simulate(x_init, ctx, model, user_key)
+    dxs, x, _, costs, t, terminated = controlled_simulate(x_init, ctx, model, user_key)
     B, T, _ = x.shape
     diff, term = v_diff(x,t)
     traj_costs = jnp.mean(jnp.sum(costs, axis=-1))
@@ -126,7 +126,7 @@ def loss_fn_td_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: C
         return jnp.mean(jnp.sum(jnp.square(v_diff_cost), axis=-1)) + jnp.square(v_term_cost)
 
     model = eqx.combine(params, static)
-    x, _, costs, t,terminated = controlled_simulate(x_init, ctx, model, user_key)
+    dxs, x, _, costs, t,terminated = controlled_simulate(x_init, ctx, model, user_key)
     values = compute_values(x, t).reshape(ctx.cfg.batch, ctx.cfg.samples, ctx.cfg.nsteps)
     diff, term = v_diff_stoch(values) # shapes: (B, S, T-1), (B)
     costs  = costs.reshape(ctx.cfg.batch, ctx.cfg.samples, ctx.cfg.nsteps)
@@ -158,6 +158,6 @@ def loss_fn_target_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx:
         return jnp.sum(jnp.square(pred - targets))
 
     model = eqx.combine(params, static)
-    x,_,costs,terminated =  controlled_simulate(x_init, ctx, model, user_key)
+    dxs, x,_,costs,terminated =  controlled_simulate(x_init, ctx, model, user_key)
     traj_costs = jnp.mean(jnp.sum(costs, axis=1))
     return jnp.mean(cost(x,costs)), traj_costs

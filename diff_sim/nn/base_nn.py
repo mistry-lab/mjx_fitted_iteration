@@ -43,6 +43,7 @@ class Network(eqx.Module, ABC):
         (loss_value, res), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(
             params, static, dxs, ctx, user_key
         )
+        # res
         updates, state = optim.update(grads, state, model)
         model = eqx.apply_updates(model, updates)
 
@@ -62,6 +63,7 @@ class Network(eqx.Module, ABC):
             x_init: Initial input data.
             ctx: Context object containing additional information like loss function.
         """
+        raise NotImplementedError
         params, static = eqx.partition(model, eqx.is_array)
 
         # Reshape x_init to have leading dimension equal to the number of GPUs

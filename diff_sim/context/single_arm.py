@@ -9,17 +9,17 @@ from diff_sim.loss_funcs import loss_fn_policy_stoch, loss_fn_td_stoch, loss_fn_
 from diff_sim.context.meta_context import Config, Callbacks, Context
 from diff_sim.nn.base_nn import Network
 
-model_path = os.path.join(os.path.dirname(__file__), '../xmls/single_arm.xml')
+model_path = os.path.join(os.path.dirname(__file__), '../xmls/point_mass_tendon.xml')
 def gen_model() -> mujoco.MjModel:
     return mujoco.MjModel.from_xml_path(model_path)
 
 _cfg = Config(
     lr=4e-3,
     seed=0,
-    batch=60,
+    batch=200,
     samples=1,
     epochs=1000,
-    eval=10,
+    eval=200,
     num_gpu=1,
     dt=0.01,
     ntotal=256,
@@ -70,14 +70,17 @@ def control_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
 
 def run_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = state_encoder(mx, dx)
-    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10, 10, 10, 0.1, 0.1, 0.1])), x))
+    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 10, 10, 0.1, 0.1, 0.1, 0.1, 0.1])), x))
 
 def terminal_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = state_encoder(mx, dx)
-    return 0.01*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([20, 10, 10, 0.1, 0.1, 0.1])), x))
+    return 0.01*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 10, 10, 0.1, 0.1, 0.1, 0.1, 0.1])), x))
 
 def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
-    qpos = jax.random.uniform(key, (total_batch, _cfg.mx.nq), minval=1, maxval=2.5)
+    angs = jax.random.uniform(key, (total_batch, 1), minval=-1.57, maxval=1.57)
+    obj_x = jax.random.uniform(key, (total_batch, 1), minval=-.15, maxval=0.73)
+    obj_y = jax.random.uniform(key, (total_batch, 1), minval=0, maxval=0.1)
+    qpos = jnp.concatenate([angs, obj_x, obj_y], axis=1)
     qvel = jax.random.uniform(key, (total_batch, _cfg.mx.nv), minval=-0.1, maxval=0.1)
     return jnp.concatenate([qpos, qvel], axis=1)
 
@@ -94,7 +97,10 @@ def is_terminal(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     qvel = dx.qvel
     qvel = jnp.abs(qvel) > 10
     qvel = jnp.sum(qvel, axis=0) > 0
-    return jnp.array([jnp.logical_or(time_limit, jnp.logical_or(qpos, qvel))])
+    # check if a pos is nan
+    nan_check = jnp.isnan(dx.qpos)
+    nan_check = jnp.sum(nan_check, axis=0) > 0
+    return jnp.array([jnp.logical_or(jnp.logical_or(time_limit, qpos), jnp.logical_or(qvel, nan_check))])
 
 ctx = Context(
     _cfg,

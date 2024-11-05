@@ -27,7 +27,7 @@ def visualise_policy(
     key, xkey, tkey, user_key = jax.random.split(key, num=4)
     x_inits = ctx.cbs.init_gen(2, xkey)
     dxs = set_init_vmap(x_inits, ctx.cfg.mx)
-    _, x, _, _, _, _ = eqx.filter_jit(controlled_simulate)(dxs, ctx, net, tkey, 400)
+    _, x, _, _, _, term_mask = eqx.filter_jit(controlled_simulate)(dxs, ctx, net, tkey, 600)
     x = jax.vmap(jax.vmap(ctx.cbs.state_decoder))(x)
     x = np.array(x.squeeze())
     for b in range(x.shape[0]):
