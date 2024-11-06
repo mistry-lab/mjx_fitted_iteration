@@ -11,8 +11,8 @@ def controlled_simulate(dxs:mjx.Data, ctx: Context, net: Network, key: jnp.ndarr
 
     def cost_fn(mx:mjx.Model , dx:mjx.Data):
         ucost = ctx.cbs.control_cost(mx,dx) * ctx.cfg.dt
-        xcst = ctx.cbs.run_cost(mx,dx) * ctx.cfg.dt
-        return jnp.array([ucost + xcst])
+        xcost = ctx.cbs.run_cost(mx,dx) * ctx.cfg.dt
+        return jnp.array([xcost + ucost])
 
     # TODO: append a flag with x that signifies wether you should terminate or not
     def step(carry, _):
@@ -33,17 +33,22 @@ def controlled_simulate(dxs:mjx.Data, ctx: Context, net: Network, key: jnp.ndarr
         x, u, costs, ts, terminated = res[...,:-mx.nu-3], res[...,-mx.nu-3:-3], res[...,-3], res[...,-2], res[...,-1]
         x = jnp.concatenate([x_init.reshape(1,-1), x], axis=0)
         t = jnp.concatenate([jnp.array([ctx.cfg.dt]), ts], axis=0)
+
         # If the last time step is equal to the total time steps, then it is a terminal state
         # else it is not a terminal state. Compute the costs accordingly
         is_terminal = jnp.isclose((ts[-1]/ mx.opt.timestep), (ctx.cfg.ntotal - 1))
-        tcost = ctx.cbs.terminal_cost(mx, dx) if is_terminal else ctx.cbs.run_cost(mx, dx)
-        costs = jnp.concatenate([costs, tcost.reshape(-1)], axis=0)
+        def t_cost(): return ctx.cbs.terminal_cost(mx, dx);
+        def r_cost(): return ctx.cbs.run_cost(mx, dx);
+        term_cost = jax.lax.cond(is_terminal, t_cost, r_cost)
+        zeros = jnp.zeros_like(term_cost)
+        costs = jnp.concatenate([costs, zeros.reshape(-1)], axis=0)
+
+        # Mask the gradients of the costs that are after the termination
         termination_mask = jnp.concatenate([
             jnp.array([False]),  # Ignore the first cost
             jnp.cumsum(terminated) > 0  # True from first termination onward
         ], axis=0)
-        # mask the gradients of the costs that are after the termination
-        costs = costs * jnp.logical_not(termination_mask)       
+        costs = costs * jnp.logical_not(termination_mask)
         return dx, x, u, costs, t, jnp.any(termination_mask)
 
     return rollout(dxs)

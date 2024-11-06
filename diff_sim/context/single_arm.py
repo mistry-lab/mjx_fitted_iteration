@@ -19,7 +19,7 @@ _cfg = Config(
     batch=200,
     samples=1,
     epochs=1000,
-    eval=200,
+    eval=50,
     num_gpu=1,
     dt=0.01,
     ntotal=256,
@@ -45,8 +45,7 @@ class Policy(Network):
         for layer in self.layers[:-1]:
             x = self.act(layer(x))
         x = self.layers[-1](x).squeeze()
-        # bound the control to be between -1 and 1 using tanh
-        # x = jnp.tanh(x) * 2
+        # x = jnp.tanh(x) * 1
         return x
 
 
@@ -66,20 +65,20 @@ def state_decoder(x: jnp.ndarray) -> jnp.ndarray:
 
 def control_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = dx.ctrl
-    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0.1, 0.1, 0.1])), x))
+    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0.0001, 0.0001, 0.0001])), x))
 
 def run_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = state_encoder(mx, dx)
-    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 10, 10, 0.1, 0.1, 0.1, 0.1, 0.1])), x))
+    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 1000, 1000, 0.1, 0.1, 0.1, 1, 1])), x))
 
 def terminal_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = state_encoder(mx, dx)
-    return 0.01*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 10, 10, 0.1, 0.1, 0.1, 0.1, 0.1])), x))
+    return 0.01*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 1000, 100, 0.1, 0.1, 0.1, 1, 1])), x))
 
 def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
-    angs = jax.random.uniform(key, (total_batch, 1), minval=-1.57, maxval=1.57)
-    obj_x = jax.random.uniform(key, (total_batch, 1), minval=-.15, maxval=0.73)
-    obj_y = jax.random.uniform(key, (total_batch, 1), minval=0, maxval=0.1)
+    angs = jax.random.uniform(key, (total_batch, 3), minval=-0.57, maxval=0.57)
+    obj_x = jax.random.uniform(key, (total_batch, 1), minval=-.15, maxval=0.1)
+    obj_y = jax.random.uniform(key, (total_batch, 1), minval=-0.2, maxval=0.5)
     qpos = jnp.concatenate([angs, obj_x, obj_y], axis=1)
     qvel = jax.random.uniform(key, (total_batch, _cfg.mx.nv), minval=-0.1, maxval=0.1)
     return jnp.concatenate([qpos, qvel], axis=1)
@@ -90,7 +89,6 @@ def gen_network(seed: int) -> Network:
 
 def is_terminal(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     time_limit =  (dx.time/ mx.opt.timestep) > (_cfg.ntotal - 1)
-    # check if angles are going too far e.g. multiple rotations
     qpos = dx.qpos
     qpos = jnp.abs(qpos) > 2.2*jnp.pi
     qpos = jnp.sum(qpos, axis=0) > 0

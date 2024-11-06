@@ -16,6 +16,8 @@ from diff_sim.utils.mj_data_manager import create_data_manager
 
 config.update('jax_default_matmul_precision', 'high')
 
+# stop when you hit NaNs in jax
+# jax.config.update("jax_debug_nans", True)
 if __name__ == '__main__':
     try:
         parser = argparse.ArgumentParser()

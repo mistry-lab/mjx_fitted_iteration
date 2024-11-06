@@ -5,7 +5,7 @@
     </visual>
 
     <!-- Time step configuration: critical for simulation stability -->
-    <option impratio="10" iterations="1" ls_iterations="4" timestep="0.006">
+    <option impratio="10" iterations="1" ls_iterations="1" timestep="0.006" solver="CG">
         <flag eulerdamp="disable"/>
     </option>
 
@@ -56,8 +56,8 @@
     </worldbody>
 
     <actuator>
-        <general name="proximal" joint="proximal" gear="0.25 0 0 0 0 0" />
-        <general name="distal" joint="distal" gear="0.325 0 0 0 0 0" />
-        <general name="distal2" joint="distal2" gear="0.325 0 0 0 0 0" />
+        <general name="proximal" joint="proximal" gear="0.45 0 0 0 0 0" ctrlrange="-1 1" />
+        <general name="distal" joint="distal" gear="0.425 0 0 0 0 0" ctrlrange="-1 1" />
+        <general name="distal2" joint="distal2" gear="0.325 0 0 0 0 0" ctrlrange="-1 1" />
     </actuator>
 </mujoco>

@@ -4,10 +4,14 @@
         <headlight ambient="0.4 0.4 0.4" diffuse="0.8 0.8 0.8" specular="0.1 0.1 0.1" />
     </visual>
 
-  <!--  Time step is very important any number above 0.008 leads to unstable results original time step is 0.0001 -->
-  <option impratio="10" iterations="1" ls_iterations="4" timestep="0.006">
+  <option impratio="10" iterations="1" ls_iterations="4" timestep="0.01">
     <flag eulerdamp="disable"/>
   </option>
+
+  <custom>
+    <numeric data="15" name="max_contact_points"/>
+    <numeric data="15" name="max_geom_pairs"/>
+  </custom>
 
     <asset>
         <texture type="skybox" name="skybox" builtin="gradient" mark="random" rgb1="0.4 0.6 0.8" rgb2="0 0 0" markrgb="1 1 1" width="800" height="4800" />
@@ -25,8 +29,6 @@
         <material name="target_default" rgba="0.6 0.3 0.3 1" />
         <material name="target_highlight" rgba="0.6 0.3 0.3 0.4" />
     </asset>
-
-    <option timestep="0.01"> </option>
 
     <worldbody>
         <camera name="fixed" pos="0 0 0.75" />
@@ -50,15 +52,16 @@
             <camera name="cam0" pos="0 -0.3 0.3" xyaxes="1 0 0 0 0.7 0.7"/>
             <joint name="root_x" type="slide"  pos="0 0 0" axis="1 0 0" damping="3" frictionloss=".01"/>
             <joint name="root_y" type="slide"  pos="0 0 0" axis="0 1 0" damping="3" frictionloss=".01"/>
-            <geom name="pointmass" type="sphere" size=".042" material="self" mass=".6" condim="3"  group="2" solimp="0.9 0.95 0.001" solref="0.02 1"/>
+            <geom name="pointmass" type="sphere" size=".042" material="self" mass=".6" condim="3"  group="2" solimp="0.0 0.95 0.1 0.5 2"
+ solref="0.02 1.0"/>
         </body>
 
         <geom name="target" pos="0.25 -0.25 0.022" material="target" type="sphere" rgba="0.5 1 0 0.25"  size=".045" contype="0" conaffinity="0"/>
     </worldbody>
 
     <actuator>
-        <general name="proximal" joint="proximal" gear="1 0 0 0 0 0" />
-        <general name="distal" joint="distal" gear="0.45 0 0 0 0 0" />
-        <general name="distal2" joint="distal2" gear="0.33 0 0 0 0 0" />
+        <general name="proximal" joint="proximal" gear="0.45 0 0 0 0 0"/>
+        <general name="distal" joint="distal" gear="0.325 0 0 0 0 0"/>
+        <general name="distal2" joint="distal2" gear="0.325 0 0 0 0 0"/>
     </actuator>
 </mujoco>
