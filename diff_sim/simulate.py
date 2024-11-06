@@ -35,9 +35,15 @@ def controlled_simulate(dxs:mjx.Data, ctx: Context, net: Network, key: jnp.ndarr
         t = jnp.concatenate([jnp.array([ctx.cfg.dt]), ts], axis=0)
         # If the last time step is equal to the total time steps, then it is a terminal state
         # else it is not a terminal state. Compute the costs accordingly
-        is_terminal = jnp.isclose((ts[-1]/ mx.opt.timestep), (ctx.cfg.ntotal - 1))
-        tcost = ctx.cbs.terminal_cost(mx, dx) if is_terminal else ctx.cbs.run_cost(mx, dx)
-        costs = jnp.concatenate([costs, tcost.reshape(-1)], axis=0)
+        # If the last time step is equal to the total time steps, then it is a terminal state
+        # else it is not a terminal state. Compute the costs accordingly
+        is_terminal = jnp.isclose((ts[-1] / mx.opt.timestep), (ctx.cfg.ntotal - 1))
+        def t_cost(): return ctx.cbs.terminal_cost(mx, dx);
+        def r_cost(): return ctx.cbs.run_cost(mx, dx) * ctx.cfg.dt;
+        term_cost = jax.lax.cond(is_terminal, t_cost, r_cost)
+        
+        zeros = jnp.zeros_like(term_cost)
+        costs = jnp.concatenate([costs, zeros.reshape(-1)], axis=0)
         termination_mask = jnp.concatenate([
             jnp.array([False]),  # Ignore the first cost
             jnp.cumsum(terminated) > 0  # True from first termination onward
