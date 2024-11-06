@@ -4,7 +4,7 @@
         <headlight ambient="0.4 0.4 0.4" diffuse="0.8 0.8 0.8" specular="0.1 0.1 0.1" />
     </visual>
 
-  <option impratio="10" iterations="1" ls_iterations="4" timestep="0.01">
+  <option impratio="10" iterations="1" ls_iterations="4" timestep="0.0005">
     <flag eulerdamp="disable"/>
   </option>
 
@@ -36,7 +36,7 @@
 
 
         <body name ="finger" pos="0.2 0.15 0.035" quat="0.707107 0.707107 0 0">
-            <joint name="proximal" range="-150 -80" axis="0 -1 0" ref="-90" damping="0.05" limited="false" />
+            <joint name="proximal" range="-150 -80" axis="0 -1 0" damping="0.05" limited="false" />
             <geom name="proximal" type="capsule" material="self" size=".03" fromto="0 0 0 0 0 -.17" contype="1" conaffinity="2"/>
             <body name="distal" pos="0 0 -.23">
                 <joint name="distal" range="-50 50" axis="0 -1 0" damping="0.05" limited="false"/>
@@ -60,8 +60,8 @@
     </worldbody>
 
     <actuator>
-        <general name="proximal" joint="proximal" gear="0.45 0 0 0 0 0"/>
-        <general name="distal" joint="distal" gear="0.325 0 0 0 0 0"/>
-        <general name="distal2" joint="distal2" gear="0.325 0 0 0 0 0"/>
+        <position name="proximal" joint="proximal" kp="8" kv="2" ctrllimited="true" ctrlrange="-6 6" forcerange="-.5 .5"/>
+        <position name="distal" joint="distal" kp="8" kv="2"  ctrllimited="true" ctrlrange="-6 6" forcerange="-.5 .5"/>
+        <position name="distal2" joint="distal2" kp="8" kv="2"   ctrllimited="true" ctrlrange="-6 6" forcerange="-.5 .5"/>
     </actuator>
 </mujoco>
