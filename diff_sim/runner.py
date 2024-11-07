@@ -1,4 +1,6 @@
 import argparse
+import time
+
 import wandb
 import mujoco
 from mujoco import viewer
@@ -10,7 +12,7 @@ import jax.numpy as jnp
 import contextlib  # Added for handling headless mode
 from diff_sim.context.tasks import ctxs
 from diff_sim.utils.tqdm import trange
-from diff_sim.utils.mj import visualise_policy
+from diff_sim.utils.mj import visualise_policy, visualise_traj
 from diff_sim.utils.generic import save_model
 from diff_sim.utils.mj_data_manager import create_data_manager
 
@@ -62,7 +64,10 @@ if __name__ == '__main__':
             for e in (es := trange(ctx.cfg.epochs)):
                 key, xkey, tkey, user_key = jax.random.split(key, num = 4)
                 net, opt_state, loss_value, res = make_step(dxs, optim, net, opt_state, ctx, user_key)
-                traj_cost, dxs, terminated = res
+                traj_cost, dxs, terminated, x = res
+                # visualise_traj(x, data, model, viewer, ctx)
+                # print("Waiting for 10 seconds before resetting data...")
+                # time.sleep(0.5)
                 dxs = data_manager.reset_data(ctx.cfg.mx, dxs, ctx, tkey, terminated)
                 sum_loss += loss_value.item()
                 sum_cost += traj_cost.item()

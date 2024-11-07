@@ -25,11 +25,30 @@ def visualise_policy(
         ctx: Context, net: Network, key: jax.random.PRNGKey
 ):
     key, xkey, tkey, user_key = jax.random.split(key, num=4)
-    x_inits = ctx.cbs.init_gen(2, xkey)
+    x_inits = ctx.cbs.init_gen(6, xkey)
     dxs = set_init_vmap(x_inits, ctx.cfg.mx)
-    _, x, _, _, _, term_mask = eqx.filter_jit(controlled_simulate)(dxs, ctx, net, tkey, 600)
+    _, x, _, _, _, term_mask = eqx.filter_jit(controlled_simulate)(dxs, ctx, net, tkey, ctx.cfg.ntotal)
     x = jax.vmap(jax.vmap(ctx.cbs.state_decoder))(x)
-    x = np.array(x.squeeze())
+    x = np.array(x)[0].reshape(1, ctx.cfg.ntotal, -1)
+    for b in range(x.shape[0]):
+        for i in range(x.shape[1]):
+            step_start = time.time()
+            qpos = x[b, i, :m.nq]
+            qvel = x[b, i, m.nq:]
+            d.qpos[:] = qpos
+            d.qvel[:] = qvel
+            mujoco.mj_forward(m, d)
+            viewer.sync()
+            time_until_next_step = m.opt.timestep - (time.time() - step_start)
+            if time_until_next_step > 0:
+                time.sleep(time_until_next_step)
+
+
+def visualise_traj(
+        x, d: mujoco.MjData, m: mujoco.MjModel, viewer: mujoco.viewer.Handle, ctx: Context
+):
+    x = jax.vmap(jax.vmap(ctx.cbs.state_decoder))(x)
+    x = np.array(x)
     for b in range(x.shape[0]):
         for i in range(x.shape[1]):
             step_start = time.time()

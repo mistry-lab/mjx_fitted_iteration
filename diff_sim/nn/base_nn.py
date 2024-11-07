@@ -74,7 +74,7 @@ class Network(eqx.Module, ABC):
         (loss_value, res), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(
             params, static, dxs, ctx, user_key
         )
-        # grads = jax.tree_util.tree_map(lambda x: jnp.nan_to_num(x), grads)
+        grads = jax.tree_util.tree_map(lambda x: jnp.nan_to_num(x), grads)
         # grads = clip_grad_elementwise(grads, clip_value=1.0)
 
         updates, state = optim.update(grads, state, model)

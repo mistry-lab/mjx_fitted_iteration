@@ -16,13 +16,13 @@ def gen_model() -> mujoco.MjModel:
 _cfg = Config(
     lr=4e-3,
     seed=4,
-    batch=200,
+    batch=240,
     samples=1,
     epochs=1000,
     eval=50,
     num_gpu=1,
-    dt=0.0005,
-    ntotal=2560,
+    dt=0.01,
+    ntotal=512,
     nsteps=16,
     mx=mjx.put_model(gen_model()),
     gen_model=gen_model
@@ -45,7 +45,6 @@ class Policy(Network):
         for layer in self.layers[:-1]:
             x = self.act(layer(x))
         x = self.layers[-1](x).squeeze()
-        x = jnp.tanh(x) * 1
         return x
 
 
@@ -53,7 +52,7 @@ def policy(net: Network, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
 ) -> tuple[mjx.Data, jnp.ndarray]:
     x = state_encoder(mx, dx)
     t = jnp.expand_dims(dx.time, axis=0)
-    u = net(x, t) + dx.qpos[:3]
+    u = net(x, t)
     dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
     return dx, u
 
@@ -69,27 +68,44 @@ def control_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
 
 def run_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = state_encoder(mx, dx)
-    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 1000, 1000, 0.1, 0.1, 0.1, 1, 1])), x))
+    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 1000, 1000, 0, 0, 0, 0, 0, 0, 0, 0, 10, 10, 0, 0, 0, 0])), x))
 
 def terminal_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = state_encoder(mx, dx)
-    return 0.01*jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 1000, 100, 0.1, 0.1, 0.1, 1, 1])), x))
+    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 1000, 1000, 0, 0, 0, 0, 0, .1, .1, .1, 10, 10, 0, 0, 0, 0])), x))
 
 def init_gen(total_batch: int, key: jnp.ndarray) -> jnp.ndarray:
-    angs = jax.random.uniform(key, (total_batch, 3), minval=-0.0, maxval=0.0)
-    obj_x = jax.random.uniform(key, (total_batch, 1), minval=.1, maxval=0.1)
-    obj_y = jax.random.uniform(key, (total_batch, 1), minval=0.1, maxval=0.6)
-    qpos = jnp.concatenate([angs, obj_x, obj_y], axis=1)
+    theta = jax.random.uniform(key, (total_batch, 1), minval=-2.7, maxval=2.7)
+    ang2 = jnp.zeros_like(theta)
+    ang3 = jnp.zeros_like(theta)
+    angs = jnp.concatenate([theta, ang2, ang3], axis=1)
+    theta_min = 0.1
+    theta_max = 0.2
+    temp_ang = jax.random.uniform(key, (total_batch, 1), minval=theta_min, maxval=theta_max)
+    # sample -1 or 1 size of total_batch
+    signs = jax.random.bernoulli(key, 0.5, (total_batch, 1))
+    temp_ang = theta + (signs * temp_ang)
+    l = jax.random.uniform(key, (total_batch, 1), minval=0.1, maxval=0.45)
+    dx, dy = 0.2, 0.1
+    obj_x = jnp.cos(-temp_ang) * l + dx
+    obj_y = jnp.sin(-temp_ang) * l + dy
+    obj_z = jax.random.uniform(key, (total_batch, 1), minval=0, maxval=0)
+    quats = jnp.tile(jnp.array([1, 0, 0, 0]), (total_batch, 1))
+    qpos = jnp.concatenate([angs, obj_x, obj_y, obj_z, quats], axis=1)
     qvel = jax.random.uniform(key, (total_batch, _cfg.mx.nv), minval=-0.1, maxval=0.1)
     return jnp.concatenate([qpos, qvel], axis=1)
 
 def gen_network(seed: int) -> Network:
     key = jax.random.PRNGKey(seed)
-    return Policy([_cfg.mx.nq + _cfg.mx.nv, 6, 6, _cfg.mx.nu], key)
+    return Policy([_cfg.mx.nq + _cfg.mx.nv, 64, 64, _cfg.mx.nu], key)
 
 def is_terminal(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     time_limit =  (dx.time/ mx.opt.timestep) > (_cfg.ntotal - 1)
-    return jnp.array([time_limit])
+    theta = dx.qpos[:3]
+    angle_limit = jnp.any(jnp.abs(theta) > (2.5 * jnp.pi))
+    # use logical or to return the maximum value
+    return jnp.array([jnp.logical_or(time_limit, angle_limit)])
+
 
 ctx = Context(
     _cfg,
