@@ -87,14 +87,26 @@ def set_data(mx: mjx.Model, dx: mjx.Data, ctx: Context, key: jnp.ndarray) -> mjx
     ang1 = jax.random.uniform(key, (1,), minval=-0, maxval=2*jnp.pi)
     ang23 = jax.random.uniform(key, (2,), minval=-0.0, maxval=0.0)
     angs = jnp.concatenate([ang1, ang23], axis=0)
-    l, d_theta = 0.5, 0.1
-    rand_sign = jax.random.bernoulli(key, 0.5)
-    obj_x = jax.random.uniform(key, (1,), minval=0.25, maxval=l) * (jnp.sin(angs[0] + d_theta * rand_sign))
-    obj_y = jax.random.uniform(key, (1,), minval=0.25, maxval=l) * (jnp.cos(angs[0] + d_theta * rand_sign))
-    obj_z = jax.random.uniform(key, (1,), minval=0.0, maxval=0.0)
+    l, d_theta = 0.5, 0.25
+
+    _, key = jax.random.split(key)
+    rand_sign = -1. + 2.*jax.random.bernoulli(key, 0.5)
+
+    _, key = jax.random.split(key)
+    l_ball = jax.random.uniform(key, (1,), minval=l, maxval=l)
+    obj_x = l_ball * (jnp.sin(angs[0] + d_theta * rand_sign))
+    obj_y = l_ball * (jnp.cos(angs[0] + d_theta * rand_sign))
+
+    obj_z = jnp.array([0.])
     qpos = jnp.concatenate([angs, obj_x, obj_y, obj_z, jnp.array([1, 0, 0, 0])], axis=0)
+
+    _, key = jax.random.split(key)
     qvel = jax.random.uniform(key, (_cfg.mx.nv,), minval=-0.1, maxval=0.1)
+
+    _, key = jax.random.split(key)
     target_pos = jax.random.uniform(key, (2,), minval=-0.5, maxval=0.5)
+
+    
     target_pos = jnp.concatenate([target_pos, jnp.array([0])], axis=0)
     qpos = dx.qpos.at[:].set(qpos)
     qvel = dx.qvel.at[:].set(qvel)
