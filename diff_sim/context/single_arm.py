@@ -74,23 +74,23 @@ def control_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
 def run_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = state_encoder(mx, dx)
     return jnp.dot(
-        x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 2000, 2000, 0, 0, .1, .1, .1, 1, 1])), x)
+        x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 4000, 4000, 0, 0, .1, .1, .1, 1, 1])), x)
     )
 
 def terminal_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = state_encoder(mx, dx)
     return _cfg.dt * jnp.dot(
-        x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 2000, 2000, 0, 0, .1, .1, .1, 1, 1])), x)
+        x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 4000, 4000, 0, 0, .1, .1, .1, 1, 1])), x)
     )
 
 def set_data(mx: mjx.Model, dx: mjx.Data, ctx: Context, key: jnp.ndarray) -> mjx.Data:
-    ang1 = jax.random.uniform(key, (1,), minval=-0.0, maxval=0.0)
+    ang1 = jax.random.uniform(key, (1,), minval=-0, maxval=2*jnp.pi)
     ang23 = jax.random.uniform(key, (2,), minval=-0.0, maxval=0.0)
     angs = jnp.concatenate([ang1, ang23], axis=0)
     l, d_theta = 0.5, 0.1
     rand_sign = jax.random.bernoulli(key, 0.5)
-    obj_x = jax.random.uniform(key, (1,), minval=0, maxval=l) * (jnp.cos(angs[0] + d_theta * rand_sign))
-    obj_y = jax.random.uniform(key, (1,), minval=0, maxval=l) * (jnp.sin(angs[0] + d_theta * rand_sign))
+    obj_x = jax.random.uniform(key, (1,), minval=0.25, maxval=l) * (jnp.sin(angs[0] + d_theta * rand_sign))
+    obj_y = jax.random.uniform(key, (1,), minval=0.25, maxval=l) * (jnp.cos(angs[0] + d_theta * rand_sign))
     obj_z = jax.random.uniform(key, (1,), minval=0.0, maxval=0.0)
     qpos = jnp.concatenate([angs, obj_x, obj_y, obj_z, jnp.array([1, 0, 0, 0])], axis=0)
     qvel = jax.random.uniform(key, (_cfg.mx.nv,), minval=-0.1, maxval=0.1)

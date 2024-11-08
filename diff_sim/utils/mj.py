@@ -19,7 +19,7 @@ def visualise_policy(
 ):
     key, xkey, tkey, user_key = jax.random.split(key, num=4)
     dxs = data_manager.create_data(ctx.cfg.mx, ctx, 2, xkey)
-    _, x, _, _, _, term_mask = eqx.filter_jit(controlled_simulate)(dxs, ctx, net, tkey, ctx.cfg.ntotal)
+    dxs, x, _, _, _, term_mask = eqx.filter_jit(controlled_simulate)(dxs, ctx, net, tkey, ctx.cfg.ntotal)
     x = jax.vmap(jax.vmap(ctx.cbs.state_decoder))(x)
     x = np.array(x)[0].reshape(1, ctx.cfg.ntotal, -1)
     for b in range(x.shape[0]):
@@ -29,6 +29,7 @@ def visualise_policy(
             qvel = x[b, i, m.nq:]
             d.qpos[:] = qpos
             d.qvel[:] = qvel
+            d.mocap_pos = np.array(dxs.mocap_pos[b])
             mujoco.mj_forward(m, d)
             viewer.sync()
             time_until_next_step = m.opt.timestep - (time.time() - step_start)
