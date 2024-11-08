@@ -40,6 +40,8 @@ if __name__ == '__main__':
 
         # Initial keys for random number generation; these will be split for each iteration
         init_key = jax.random.PRNGKey(ctx.cfg.seed)
+        #array of keys
+
         key, subkey = jax.random.split(init_key)
 
         # Model and data for rendering (CPU side)
@@ -58,7 +60,7 @@ if __name__ == '__main__':
             # make_data that give batch of dx
             key, init_key = jax.random.split(key)
             data_manager = create_data_manager()
-            dxs = data_manager.create_data(ctx.cfg.mx, ctx,  ctx.cfg.batch, init_key)
+            dxs = data_manager.create_data(ctx.cfg.mx, ctx, ctx.cfg.batch*ctx.cfg.samples, init_key)
             sum_loss, sum_cost, sum_reset, iter = 0, 0, 0, ctx.cfg.ntotal//ctx.cfg.nsteps
             # init data
             for e in (es := trange(ctx.cfg.epochs)):
@@ -73,7 +75,7 @@ if __name__ == '__main__':
                 sum_cost += traj_cost.item()
                 sum_reset += jnp.sum(terminated).item()
                 if e % iter == 0:
-                    log_data = {"Loss avg": round(sum_loss/iter, 3), "Traj Cost avg": round(sum_cost/iter, 3), "nreset avg": sum_reset}
+                    log_data = {"Loss avg": round(sum_loss/iter, 3), "Traj Cost avg": round(sum_cost/iter, 3), "nreset avg": sum_reset//iter}
                     wandb.log(log_data)
                     es.set_postfix(log_data)
                     sum_loss, sum_cost, sum_reset = 0, 0, 0

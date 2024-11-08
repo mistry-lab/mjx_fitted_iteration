@@ -9,6 +9,9 @@ from diff_sim.nn.base_nn import Network
 def controlled_simulate(dxs:mjx.Data, ctx: Context, net: Network, key: jnp.ndarray, ntime: int):
     mx = ctx.cfg.mx
 
+    def cat_pos_vel(dx):
+        return jnp.concatenate([dx.qpos, dx.qvel], axis=0)
+
     def cost_fn(mx:mjx.Model , dx:mjx.Data):
         ucost = ctx.cbs.control_cost(mx,dx) * ctx.cfg.dt
         xcost = ctx.cbs.run_cost(mx,dx) * ctx.cfg.dt
@@ -22,13 +25,13 @@ def controlled_simulate(dxs:mjx.Data, ctx: Context, net: Network, key: jnp.ndarr
         cost = cost_fn(mx, dx)
         dx = mjx.step(mx, dx) # Dynamics function
         terminated = ctx.cbs.is_terminal(mx, dx)
-        x = ctx.cbs.state_encoder(mx,dx)
+        x = cat_pos_vel(dx)
         t = jnp.expand_dims(dx.time, axis=0)
         return (dx, key), jnp.concatenate([x, dx.ctrl, cost, t, terminated], axis=0)
 
     @jax.vmap
     def rollout(dx):
-        x_init = ctx.cbs.state_encoder(mx,dx)
+        x_init = cat_pos_vel(dx)
         (dx,_), res = jax.lax.scan(step, (dx, key), None, length=ntime-1)
         x, u, costs, ts, terminated = res[...,:-mx.nu-3], res[...,-mx.nu-3:-3], res[...,-3], res[...,-2], res[...,-1]
         x = jnp.concatenate([x_init.reshape(1,-1), x], axis=0)

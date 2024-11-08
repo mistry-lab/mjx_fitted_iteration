@@ -35,7 +35,7 @@
         <light name="light" pos="0 0 1" dir="0 0 -1" />
         <geom name="ground" size="1 1 0.1" pos="-0.0 0 -0.013" type="plane" rgba=".123 .140 .28 1" contype="1" conaffinity="2"/>
 
-        <body name ="finger" pos="0.2 0.15 0.035" quat="0.707107 0.707107 0 0">
+        <body name ="finger" pos="0.0 0.0 0.035" quat="0.707107 0.707107 0 0">
             <joint name="proximal" range="-150 -80" axis="0 -1 0" damping="0.05" limited="false" />
             <geom name="proximal" type="capsule" material="self" size=".03" fromto="0 0 0 0 0 -.17" contype="1" conaffinity="2"/>
             <body name="distal" pos="0 0 -.23">
@@ -53,7 +53,10 @@
             <camera name="cam0" pos="0 -0.3 0.3" xyaxes="1 0 0 0 0.7 0.7"/>
             <geom name="pointmass" type="sphere" size=".042" material="self" mass=".01" condim="3"  group="2" solimp="0.1 0.95 0.1 0.5 2" solref="0.02 1.0"/>
         </body>
-        <geom name="target" pos="0.0 -0.0 0.022" material="target" type="sphere" rgba="0.5 1 0 0.25"  size=".045" contype="0" conaffinity="0"/>
+
+    <body mocap="true" name="mocap_target">
+      <geom type="sphere" size="0.025" rgba="1 0 0 1" contype="0" conaffinity="0"/>
+    </body>
     </worldbody>
 
     <actuator>

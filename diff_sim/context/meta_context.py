@@ -36,7 +36,7 @@ class Callbacks:
             run_cost: Callable[[mjx.Model,mjx.Data], jnp.ndarray],
             terminal_cost: Callable[[mjx.Model,mjx.Data], jnp.ndarray],
             control_cost: Callable[[mjx.Model,mjx.Data], jnp.ndarray],
-            init_gen: Callable[[int, jnp.ndarray], jnp.ndarray],
+            set_data: Callable[[mjx.Model,mjx.Data,Context,jnp.ndarray], mjx.Data],
             state_encoder: Callable[[mjx.Model,mjx.Data], jnp.ndarray],
             state_decoder: Callable[[jnp.ndarray], jnp.ndarray],
             gen_network: Callable[[int], Network],
@@ -48,7 +48,7 @@ class Callbacks:
         self.run_cost = run_cost           # running cost for trajectories
         self.terminal_cost = terminal_cost # terminal cost for trajectories
         self.control_cost = control_cost   # control cost for trajectories
-        self.init_gen = init_gen           # initial state generator
+        self.set_data = set_data           # initial state generator
         self.state_encoder = state_encoder # state encoder that is applied to all states
         self.state_decoder = state_decoder # state decoder that is applied for visualization
         self.gen_network = gen_network     # generates the neural network (policy or value). This can be a checkpoint
