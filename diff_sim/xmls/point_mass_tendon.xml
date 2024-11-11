@@ -53,11 +53,11 @@
             <joint type="free" damping="0.001"/>
             <camera name="cam0" pos="0 -0.3 0.3" xyaxes="1 0 0 0 0.7 0.7"/>
             <geom name="pointmass" type="sphere" size=".042" material="self" mass="0.01" condim="3"  group="2" solimp="0.1 0.95 0.1 0.5 2" solref="0.02 1.0"/>
+            <site name="sphere_type" size="0.042"/>
         </body>
 
         <body mocap="true" name="mocap_target">
-            <geom type="sphere" size="0.025" rgba="1 0 0 1" contype="0" conaffinity="0"/>
-            <site name="sphere_type" type="sphere" size="0.025"/>
+            <geom type="sphere" size="0.042" rgba="1 0 0 1" contype="0" conaffinity="0"/>
         </body>
     </worldbody>
 
