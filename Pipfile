@@ -7,7 +7,7 @@ name = "pypi"
 jax = {version = "0.4.33", extras = ["cuda12"]}
 equinox = "0.11.7"
 optax = "0.2.3"
-mujoco = "3.2.3"
+mujoco = "3.2.5"
 mujoco-mjx = "*"
 pyaml = "*"
 wandb = "*"
