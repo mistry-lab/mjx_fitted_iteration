@@ -13,15 +13,22 @@ model_path = os.path.join(os.path.dirname(__file__), '../xmls/point_mass_tendon.
 def gen_model() -> mujoco.MjModel:
     return mujoco.MjModel.from_xml_path(model_path)
 
+
+def parse_sensordata(name, mx, dx):
+    id = mjx.name2id(mx, mujoco.mjtObj.mjOBJ_SENSOR, name)
+    i = mx.sensor_adr[id]
+    dim = mx.sensor_dim[id]
+    return dx.sensordata[i:i+dim]
+
 _cfg = Config(
     lr=4e-3,
     seed=4,
-    batch=240,
+    batch=512,
     samples=1,
     epochs=1000,
     eval=50,
     num_gpu=1,
-    dt=0.01,
+    dt=0.005,
     ntotal=512,
     nsteps=32,
     mx=mjx.put_model(gen_model()),
@@ -45,7 +52,7 @@ class Policy(Network):
         for layer in self.layers[:-1]:
             x = self.act(layer(x))
         x = self.layers[-1](x).squeeze()
-        x_arm = jnp.tanh(x[:3]) * 0.1
+        x_arm = jnp.tanh(x[:3]) * 2.
         ball_control = jnp.concatenate([jnp.tanh(x[3:5]) * 0.1, jnp.tanh(x[5:6]) * 0.01], axis=0)
         x = jnp.concatenate([x_arm, ball_control * 0, jnp.zeros(3)], axis=0)
         return x
@@ -82,7 +89,13 @@ def run_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     state_cost =  jnp.dot(
         x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 4000, 4000, 0, 0, .0, .0, .0, 1, 1])), x)
     )
-    return state_cost + bound_cost
+
+    touch = parse_sensordata("touch_sphere", mx, dx).squeeze()
+    threashold = 0.1
+    # threashold contact detected.
+    touch_cost = 100 * (1 / threashold) * jnp.maximum(threashold - touch, 0.)
+    
+    return state_cost + bound_cost + touch_cost
 
 def terminal_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = state_encoder(mx, dx)
@@ -94,13 +107,13 @@ def set_data(mx: mjx.Model, dx: mjx.Data, ctx: Context, key: jnp.ndarray) -> mjx
     ang1 = jax.random.uniform(key, (1,), minval=-0, maxval=2*jnp.pi)
     ang23 = jax.random.uniform(key, (2,), minval=-0.0, maxval=0.0)
     angs = jnp.concatenate([ang1, ang23], axis=0)
-    l, d_theta = 0.5, 0.25
+    l, d_theta = 0.5, 0.3
 
     _, key = jax.random.split(key)
     rand_sign = -1. + 2.*jax.random.bernoulli(key, 0.5)
 
     _, key = jax.random.split(key)
-    l_ball = jax.random.uniform(key, (1,), minval=.2, maxval=.45)
+    l_ball = jax.random.uniform(key, (1,), minval=.1, maxval=.45)
     obj_x = l_ball * (jnp.sin(angs[0] + d_theta * rand_sign))
     obj_y = l_ball * (jnp.cos(angs[0] + d_theta * rand_sign))
 
