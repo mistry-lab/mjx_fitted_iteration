@@ -1,5 +1,4 @@
 <mujoco model="planar point mass">
-    <compiler angle="radian"/>
     <visual>
         <quality shadowsize="2048" />
         <headlight ambient="0.4 0.4 0.4" diffuse="0.8 0.8 0.8" specular="0.1 0.1 0.1" />
@@ -17,6 +16,7 @@
     <asset>
         <texture type="skybox" name="skybox" builtin="gradient" mark="random" rgb1="0.4 0.6 0.8" rgb2="0 0 0" markrgb="1 1 1" width="800" height="4800" />
         <texture type="2d" name="grid" builtin="checker" mark="edge" rgb1="0.1 0.2 0.3" rgb2="0.2 0.3 0.4" markrgb="0.2 0.3 0.4" width="300" height="300" />
+        <material name="ball_material" texture="skybox" />
         <material name="grid" texture="grid" texuniform="true" reflectance="0.2" />
         <material name="self" rgba="0.7 0.5 0.3 1" />
         <material name="self_default" rgba="0.7 0.5 0.3 1" />
@@ -32,37 +32,16 @@
     </asset>
 
     <worldbody>
-        <camera name="fixed" pos="0 0 0.75" />
-        <light name="light" pos="0 0 1" dir="0 0 -1" />
         <geom name="ground" size="1 1 0.1" pos="-0.0 0 -0.013" type="plane" rgba=".123 .140 .28 1" contype="1" conaffinity="2"/>
-
-        <body name ="finger" pos="0.0 0.0 0.035" quat="0.707107 0.707107 0 0">
-            <joint name="proximal" range="-6.28 6.28" axis="0 -1 0" damping="0.05" limited="false" />
-            <geom name="proximal" type="capsule" material="self" size=".03" fromto="0 0 0 0 0 -.17" contype="1" conaffinity="2"/>
-            <body name="distal" pos="0 0 -.23">
-                <joint name="distal" range="-3 3" axis="0 -1 0" damping="0.05" limited="true"/>
-                <geom name="distal" type="capsule" size=".028" material="self" fromto="0 0 0 0 0 -.16" contype="1" conaffinity="2"/>
-                <body name="distal2" pos="0 0 -.22">
-                    <joint name="distal2" range="-3 3" axis="0 -1 0" damping="0.05" limited="true"/>
-                    <geom name="distal2" type="capsule" size=".028" material="self" fromto="0 0 0 0 0 -.16" contype="1" conaffinity="2"/>
-                </body>
-            </body>
-        </body>
 
         <body name="object" pos="0.0 0.0 0.035">
             <joint type="free" damping="0.0001"/>
             <camera name="cam0" pos="0 -0.3 0.3" xyaxes="1 0 0 0 0.7 0.7"/>
-            <geom name="pointmass" type="sphere" size=".042" material="self" mass=".01" condim="3"  group="2" solimp="0.1 0.95 0.1 0.5 2" solref="0.02 1.0"/>
+            <geom name="pointmass" type="sphere" size=".042" material="grid" mass=".01" condim="3"  group="2" solimp="0.1 0.95 0.1 0.5 2" solref="0.02 1.0"/>
         </body>
 
-    <body mocap="true" name="mocap_target">
-      <geom type="sphere" size="0.025" rgba="1 0 0 1" contype="0" conaffinity="0"/>
-    </body>
+        <body mocap="true" name="mocap_target">
+          <geom type="sphere" size="0.025" rgba="1 0 0 1" contype="0" conaffinity="0"/>
+        </body>
     </worldbody>
-
-    <actuator>
-        <general name="proximal" joint="proximal" gear="0.45 0 0 0 0 0" ctrlrange="-1 1" />
-        <general name="distal" joint="distal" gear="0.425 0 0 0 0 0" ctrlrange="-1 1" />
-        <general name="distal2" joint="distal2" gear="0.325 0 0 0 0 0" ctrlrange="-1 1" />
-    </actuator>
 </mujoco>
