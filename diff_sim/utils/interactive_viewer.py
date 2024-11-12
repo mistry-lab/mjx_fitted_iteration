@@ -14,5 +14,5 @@ def interactive_viewer(xml_path: str):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--xml", help="xml file to render", default="point_mass_tendon.xml")
+    parser.add_argument("--xml", help="xml file to render", default="diff_sim/xmls/snake_mass.xml")
     interactive_viewer(parser.parse_args().xml)

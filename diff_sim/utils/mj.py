@@ -18,7 +18,7 @@ def visualise_policy(
         ctx: Context, net: Network, key: jax.random.PRNGKey
 ):
     key, xkey, tkey, user_key = jax.random.split(key, num=4)
-    dxs = data_manager.create_data(ctx.cfg.mx, ctx, 2, xkey)
+    dxs = data_manager.create_data(ctx.cfg.mx, ctx, 3, xkey)
     dxs, x, _, _, _, term_mask = eqx.filter_jit(controlled_simulate)(dxs, ctx, net, tkey, ctx.cfg.ntotal)
     x = jax.vmap(jax.vmap(ctx.cbs.state_decoder))(x)
     x = np.array(x)[0].reshape(1, ctx.cfg.ntotal, -1)

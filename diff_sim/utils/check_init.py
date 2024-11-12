@@ -11,6 +11,7 @@ def interactive_viewer(model, data, dxs):
     with viewer.launch_passive(model, data) as v:
         while v.is_running():
             for b in range(dxs.qpos.shape[0]):
+                print(b)
 
                 data.qpos = dxs.qpos[b]
                 data.mocap_pos = np.array(dxs.mocap_pos[b])
@@ -25,7 +26,7 @@ def interactive_viewer(model, data, dxs):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--task", help="task name", default="single_arm")
+    parser.add_argument("--task", help="task name", default="snake")
     args = parser.parse_args()
     
     ctx = ctxs[args.task]
