@@ -21,7 +21,7 @@ def parse_sensordata(name, mx, dx):
     return dx.sensordata[i:i+dim]
 
 _cfg = Config(
-    lr=4e-3,
+    lr=5e-3,
     seed=4,
     batch=512,
     samples=1,
@@ -52,9 +52,10 @@ class Policy(Network):
         for layer in self.layers[:-1]:
             x = self.act(layer(x))
         x = self.layers[-1](x).squeeze()
-        x_arm = jnp.tanh(x[:3]) * 2.
-        ball_control = jnp.concatenate([jnp.tanh(x[3:5]) * 0.1, jnp.tanh(x[5:6]) * 0.01], axis=0)
-        x = jnp.concatenate([x_arm, ball_control * 0, jnp.zeros(3)], axis=0)
+        x = jnp.tanh(x) * 2.
+        # x_arm = jnp.tanh(x[:3]) * 1.
+        # ball_control = jnp.concatenate([jnp.tanh(x[3:5]) * 0.1, jnp.tanh(x[5:6]) * 0.01], axis=0)
+        # x = jnp.concatenate([x_arm, ball_control * 0, jnp.zeros(3)], axis=0)
         return x
 
 def policy(net: Network, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
@@ -62,7 +63,8 @@ def policy(net: Network, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
     x = state_encoder(mx, dx)
     t = jnp.expand_dims(dx.time, axis=0)
     u = net(x, t)
-    dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[:].set(u))
+    # dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[:].set(u))
+    dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
     return dx, u
 
 def state_encoder(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
@@ -72,36 +74,64 @@ def state_encoder(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     joint_pos = dx.qpos[:3]
     joint_vel = dx.qvel[:3]
     ball_vel = dx.qvel[3:5]
-    return jnp.concatenate([joint_pos, pos_diff, ball_pos, joint_vel, ball_vel], axis=0)
+
+    dcom = dx.xipos[2,:2] - ball_pos
+    return jnp.concatenate([joint_pos, pos_diff, dcom, ball_pos, joint_vel, ball_vel], axis=0)
 
 def state_decoder(x: jnp.ndarray) -> jnp.ndarray:
     return x
 
 def control_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
-    x = dx.qfrc_applied
+    x = dx.ctrl
     return jnp.dot(
-        x.T, jnp.dot(jnp.diag(jnp.array([0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001])), x)
+        x.T, jnp.dot(jnp.diag(jnp.array([0.0001, 0.0001, 0.0001])), x)
     )
 
 def run_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = state_encoder(mx, dx)
-    bound_cost =jnp.maximum(jnp.abs(x[0]) - 2*jnp.pi, 0)
+    # bound_cost =jnp.maximum(jnp.abs(x[0]) - 2*jnp.pi, 0)
     state_cost =  jnp.dot(
-        x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 4000, 4000, 0, 0, .0, .0, .0, 1, 1])), x)
+        x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 0, 0,1000.,1000., 0, 0, .0, .0, .0, 0, 0])), x)
+    )
+    state_cost2 =  jnp.dot(
+        x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 100, 100,0.,0., 0, 0, .0, .0, .0, 0, 0])), x)
     )
 
     touch = parse_sensordata("touch_sphere", mx, dx).squeeze()
     threashold = 0.1
     # threashold contact detected.
-    touch_cost = 100 * (1 / threashold) * jnp.maximum(threashold - touch, 0.)
+    # touch_cost = state_cost * (1 / threashold) * jnp.maximum(threashold - touch, 0.)
+
+    # touch_cost2 = state_cost2 * (1 / threashold) * jnp.maximum(touch - threashold, 0.)
+
     
-    return state_cost + bound_cost + touch_cost
+    return state_cost   
 
 def terminal_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = state_encoder(mx, dx)
-    return _cfg.dt * jnp.dot(
-        x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 4000, 4000, 0, 0, .0, .0, .0, 1, 1])), x)
+    # bound_cost =jnp.maximum(jnp.abs(x[0]) - 2*jnp.pi, 0)
+    state_cost =  _cfg.dt * jnp.dot(
+        x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 0, 0,1000.,1000., 0, 0, .0, .0, .0, 0, 0])), x)
     )
+    state_cost2 = _cfg.dt * jnp.dot(
+        x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 100, 100,0.,0., 0, 0, .0, .0, .0, 0, 0])), x)
+    )
+
+    touch = parse_sensordata("touch_sphere", mx, dx).squeeze()
+    threashold = 0.1
+    # threashold contact detected.
+    touch_cost = state_cost * (1 / threashold) * jnp.maximum(threashold - touch, 0.)
+
+    touch_cost2 = state_cost2 * (1 / threashold) * jnp.maximum(touch - threashold, 0.)
+
+    
+    return state_cost  
+
+# def terminal_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
+#     x = state_encoder(mx, dx)
+#     return _cfg.dt * jnp.dot(
+#         x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 100, 100,1000.,1000., 0, 0, .0, .0, .0, 0, 0])), x)
+#     )
 
 def set_data(mx: mjx.Model, dx: mjx.Data, ctx: Context, key: jnp.ndarray) -> mjx.Data:
     ang1 = jax.random.uniform(key, (1,), minval=-0, maxval=2*jnp.pi)
@@ -135,7 +165,7 @@ def set_data(mx: mjx.Model, dx: mjx.Data, ctx: Context, key: jnp.ndarray) -> mjx
 
 def gen_network(seed: int) -> Network:
     key = jax.random.PRNGKey(seed)
-    return Policy([12, 128, 128, _cfg.mx.nv], key)
+    return Policy([14, 128, 128, 3], key)
 
 def is_terminal(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     time_limit =  (dx.time/ mx.opt.timestep) > (_cfg.ntotal - 1)
