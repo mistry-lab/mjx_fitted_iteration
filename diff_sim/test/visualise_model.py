@@ -1,9 +1,12 @@
+import os
+import time
+import numpy as np
 import mujoco
 from mujoco import mjx
-from jax import config
-import os
+from mujoco import viewer
 import jax
-from zmq.sugar import submod
+from jax import config
+import jax.numpy as jnp
 
 config.update('jax_default_matmul_precision', jax.lax.Precision.HIGH)
 model_path = os.path.join(os.path.dirname(__file__), '../xmls/point_mass_tendon.xml')
@@ -11,14 +14,9 @@ mx = mjx.put_model(mujoco.MjModel.from_xml_path(model_path))
 m = mujoco.MjModel.from_xml_path(model_path)
 d = mujoco.MjData(m)
 
-import jax
-import jax.numpy as jnp
-
 def step(carry, _):
-    dx = carry
-    # ctrl = dx.ctrl.at[:].set(jnp.zeros_like(dx.ctrl))
-    # dx = dx.replace(ctrl=ctrl)
-    dx = mjx.step(mx, dx)# Dynamics function
+    dx, key = carry
+    dx = mjx.step(mx, dx)
     x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
     return (dx, key), jnp.concatenate([x, dx.ctrl], axis=0)
 
@@ -30,12 +28,6 @@ def rollout():
     _, res = jax.lax.scan(step, (dx, key), None, length=50000)
     x, u = res[...,:-mx.nu], res[...,-mx.nu:]
     return x, u
-
-import time
-import numpy as np
-import mujoco
-import mujoco.viewer
-import jax
 
 def visualise_policy(viewer: mujoco.viewer.Handle):
     x, u = rollout()
@@ -52,8 +44,6 @@ def visualise_policy(viewer: mujoco.viewer.Handle):
         if time_until_next_step > 0:
             time.sleep(time_until_next_step)
 
-import contextlib
-from mujoco import viewer
 viewer_context = viewer.launch_passive(m, d)
 
 with viewer_context as viewer:
