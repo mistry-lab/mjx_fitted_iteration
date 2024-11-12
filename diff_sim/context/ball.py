@@ -13,7 +13,7 @@ def op_and_split(f, key):
     key, subkey = jax.random.split(key)
     return f(subkey), key
 
-model_path = os.path.join(os.path.dirname(__file__), '../xmls/point_mass.xml')
+model_path = os.path.join(os.path.dirname(__file__), '../xmls/ball.xml')
 def gen_model() -> mujoco.MjModel:
     return mujoco.MjModel.from_xml_path(model_path)
 
