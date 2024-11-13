@@ -11,16 +11,10 @@ def interactive_viewer(model, data, dxs):
     with viewer.launch_passive(model, data) as v:
         while v.is_running():
             for b in range(dxs.qpos.shape[0]):
-                print(b)
-
                 data.qpos = dxs.qpos[b]
                 data.mocap_pos = np.array(dxs.mocap_pos[b])
-
-                # Step the model to reflect changes in qpos
                 mj_step(model, data)
                 v.sync()
-                
-                # Sleep for 20ms between updates
                 time.sleep(0.2)
 
 if __name__ == '__main__':
