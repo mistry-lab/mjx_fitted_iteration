@@ -81,9 +81,7 @@ def state_encoder(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     # middle_pos = dx.qpos[:3] 
     # joint_vel = dx.qvel[:3]
     ball_vel = dx.qvel[6:8]
-
     qpos = dx.qpos[:-4]
-
     dcom = dx.xipos[1,:2] - ball_pos
 
     return jnp.concatenate([qpos, dcom, pos_diff, ball_vel], axis=0)

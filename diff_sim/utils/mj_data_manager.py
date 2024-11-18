@@ -33,8 +33,8 @@ class DataManager(eqx.Module):
 
 def create_data_manager() -> DataManager:
     def set_init(mx: mjx.Model, ctx, batch_size, key: jnp.ndarray) -> mjx.Data:
-        x = jnp.zeros((batch_size, mx.nq + mx.nv))
-        subkey = jax.random.split(key, batch_size)
+        xs = jnp.zeros((batch_size, mx.nq + mx.nv))
+        subkeys = jax.random.split(key, batch_size)
         def set_zero(x, mx):
             dx = mjx.make_data(mx)
             qpos = dx.qpos.at[:].set(x[:mx.nq])
@@ -42,9 +42,15 @@ def create_data_manager() -> DataManager:
             dx = dx.replace(qpos=qpos, qvel=qvel)
             return dx
 
-        dxs = jax.vmap(set_zero, in_axes=(0, None))(x, mx)
-        dxs = jax.vmap(ctx.cbs.set_data, in_axes=(None, 0, None, 0))(mx, dxs, ctx, subkey)
+        dxs = jax.vmap(set_zero, in_axes=(0, None))(xs, mx)
+        dxs = jax.vmap(ctx.cbs.set_data, in_axes=(None, 0, None, 0))(mx, dxs, ctx, subkeys)
         dxs = jax.vmap(mjx.step, in_axes=(None, 0))(mx, dxs)
+
+        # TODO: test if these work
+        # dxs = jax.vmap(lambda x: set_zero(x, mx))(xs)
+        # dxs = jax.vmap(lambda dx, subkey: ctx.cbs.set_data(mx, dx, ctx, subkey))(dxs, subkeys)
+        # dxs = jax.vmap(lambda dx: mjx.step(mx, dx))(dxs)
+
         return dxs
 
     def replace_indices(data: mjx.Data, indices: jnp.ndarray, new_data: mjx.Data) -> mjx.Data:

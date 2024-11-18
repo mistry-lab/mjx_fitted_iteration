@@ -2,6 +2,8 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import mujoco
+from chex import register_dataclass_type_with_jax_tree_util
+from jax.lib.xla_extension import jax_jit
 from mujoco import mjx
 import os
 #
@@ -48,9 +50,9 @@ import os
 #     #
 #     # # Gradient calculation with JAX
 #     # res = step_mjx(x)
-#     # print(res)
-#     # grad_fn = jax.grad(lambda x: step_mjx(x))  # Gradient with respect to qpos[0]
-#     # jax_grad = grad_fn(jnp.array(0.1))
+# #     # print(res)
+#     grad_fn = jax.grad(lambda x: step_mjx(x))  # Gradient with respect to qpos[0]
+#     jax_grad = grad_fn(jnp.array(0.1))
 #     return fd_grad
 #
 # if __name__ == '__main__':
@@ -63,19 +65,72 @@ model = mujoco.MjModel.from_xml_path(os.path.join(os.path.dirname(__file__), '..
 mx = mjx.put_model(model)
 dx = mjx.make_data(mx)
 d = mujoco.MjData(model)
-d.qpos[0], d.qpos[7] = 0.1, 0.5
-dx = dx.replace(qpos=dx.qpos.at[:].set(jnp.array(d.qpos)))
+d.qpos[0], d.qpos[7] = 0.1, 0.175
 
+@jax.jit
 @jax.vmap
-def step_mjx(qpos):
+def gen_and_step_batched(qpos):
     dx = mjx.make_data(mx)
     dx = dx.replace(qpos=dx.qpos.at[:].set(qpos))
+    dx = mjx.step(mx, dx)
     return dx
 
-qpos = jnp.array([d.qpos])
-# repeat qpos twice
-qpos = jnp.repeat(qpos, 2, axis=0)
-dx = step_mjx(qpos)
+# if you remove the jit below this function throws segfault
+@jax.jit
+def gen_and_step(qpos):
+    dx = mjx.make_data(mx)
+    dx = dx.replace(qpos=dx.qpos.at[:].set(qpos))
+    dx = mjx.step(mx, dx)
+    return dx
+
+qpos0 = jnp.array(d.qpos)
+# qpos1 = jnp.repeat(jnp.array([d.qpos]), 1, axis=0)
+# qpos2 = jnp.repeat(jnp.array([d.qpos]), 2, axis=0)
+# dx2 = gen_and_step_batched(qpos2)
+# print(dx2.qpos.shape)
+# dx1 = gen_and_step_batched(qpos1)
+# print(dx1.qpos.shape)
+dx = gen_and_step(qpos0)
 print(dx.qpos.shape)
-dx = jax.vmap(lambda data: mjx.step(mx, data))(dx)
-print(dx.qpos.shape)
+
+
+def step_mj(u):
+    d.qfrc_applied[0] = u
+    mujoco.mj_step(model, d)
+    return np.array([d.qpos[0], d.qpos[7]])
+
+def step_mjx(u):
+    def init_data():
+        dx = mjx.make_data(mx)
+        dx = dx.replace(qpos=dx.qpos.at[:].set(jnp.array(d.qpos)))
+        return dx
+
+    dx = init_data()
+    dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[0].set(u))
+    dx = mjx.step(mx, dx)
+    return jnp.array([dx.qpos[0], dx.qpos[7]])
+
+
+### finite difference mj
+u, eps = 0.0, 1e-6
+fd_grad = (step_mj(u + eps) - step_mj(u - eps)) / (2 * eps)
+fd_grad_mjx = (step_mjx(jnp.array(u) + eps) - step_mjx(jnp.array(u) - eps)) / (2 * eps)
+jac_fun = jax.jacrev(lambda x: step_mjx(x))
+ad_grad = jac_fun(jnp.array(u))
+
+# from the results looks like the gradients between mjx and mj are not the same
+# primarily because the response to the qfrcs_applied is not the same
+print(f"FD: {fd_grad}")
+print(f"FD MJX {fd_grad_mjx}")
+def mjx_to_mj_step(u):
+    def init_data():
+        dx = mjx.make_data(mx)
+        dx = dx.replace(qpos=dx.qpos.at[:].set(jnp.array(d.qpos)))
+        return dx
+
+    dx = init_data()
+    dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[0].set(u))
+    dx = mjx.step(mx, dx)
+    return jnp.array([dx.qpos[0], dx.qpos[7]])
+print(f"AD: {ad_grad}")
+
