@@ -98,7 +98,7 @@ def run_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = state_encoder(mx, dx)[10:14]
     # bound_cost =jnp.maximum(jnp.abs(x[0]) - 2*jnp.pi, 0)
     state_cost =  _cfg.dt * jnp.dot(
-        x.T, jnp.dot(jnp.diag(jnp.array([500., 500., 10000., 10000.])), x)
+        x.T, jnp.dot(jnp.diag(jnp.array([1000., 1000., 1000., 1000.])), x)
     )
 
     # touch = parse_sensordata("touch_sphere", mx, dx).squeeze()
@@ -115,7 +115,7 @@ def terminal_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = state_encoder(mx, dx)[10:14]
     # bound_cost =jnp.maximum(jnp.abs(x[0]) - 2*jnp.pi, 0)
     state_cost =  _cfg.dt * jnp.dot(
-        x.T, jnp.dot(jnp.diag(jnp.array([500., 500., 10000., 10000.])), x)
+        x.T, jnp.dot(jnp.diag(jnp.array([1000., 1000., 1000., 1000.])), x)
     )
     # state_cost2 = _cfg.dt * jnp.dot(
     #     x.T, jnp.dot(jnp.diag(jnp.array([1000., 1000.])), x)

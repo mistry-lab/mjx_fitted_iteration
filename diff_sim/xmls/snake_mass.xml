@@ -34,7 +34,7 @@
     <worldbody>
         <camera name="fixed" pos="0 0 0.75" />
         <light name="light" pos="0 0 1" dir="0 0 -1" />
-        <geom name="ground" size="1 1 0.1" pos="-0.0 0 -0.013" type="plane" rgba=".123 .140 .28 1" contype="1" conaffinity="2"/>
+        <geom name="ground" size="1 1 0.01" pos="-0.0 0 -0.02" type="box" rgba=".123 .140 .28 1" contype="1" conaffinity="2"/>
 
         <body name="middle" pos="0.0 0.0 0.035" quat="0.707107 0.707107 0 0">
             <!-- Middle body: Capsule with a free joint -->
