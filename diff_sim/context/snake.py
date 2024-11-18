@@ -1,4 +1,3 @@
-
 import os
 import jax
 from jax import numpy as jnp
@@ -139,21 +138,17 @@ def terminal_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
 #     )
 
 def set_data(mx: mjx.Model, dx: mjx.Data, ctx: Context, key: jnp.ndarray) -> mjx.Data:
-
     _, key = jax.random.split(key)
     qvel = jax.random.uniform(key, (_cfg.mx.nv,), minval=-0.01, maxval=0.01)
-
     _, key = jax.random.split(key)
     ball_pos = jax.random.uniform(key, (2,), minval=-0.4, maxval=0.4)
-
     _, key = jax.random.split(key)
     target_pos = jax.random.uniform(key, (2,), minval=-0.4, maxval=0.4)
-
     _, key = jax.random.split(key)
     middle_pos = jax.random.uniform(key, (2,), minval=-0.4, maxval=0.4)
 
     qpos = jnp.concatenate([middle_pos, jnp.array([0.035]), jnp.array([0.707107, 0.707107, 0, 0]), ball_pos, jnp.array([0.035]), jnp.array([1, 0, 0, 0])], axis=0)
-    
+
     qpos = dx.qpos.at[:].set(qpos)
     # qpos = dx.qpos.at[:2].set(middle_pos)
     # qpos = dx.qpos.at[7:9].set(ball_pos)
@@ -168,6 +163,7 @@ def gen_network(seed: int) -> Network:
 def is_terminal(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     time_limit =  (dx.time/ mx.opt.timestep) > (_cfg.ntotal - 1)
     return jnp.array([time_limit])
+
 
 ctx = Context(
     _cfg,
