@@ -14,7 +14,8 @@ model = mujoco.MjModel.from_xml_path(os.path.join(os.path.dirname(__file__), '..
 mx = mjx.put_model(model)
 idata = mujoco.MjData(model)
 
-qx0, qz0, qx1 = -0.1, 0.2, 0.175 
+qx0, qz0, qx1 = -0.375, 0., -0.2
+# qx0, qz0, qx1 = -0.1, 0.2, 0.175 
 Nlength = 100
 # qx0, qx1 = 0.1, 0.175  # NONAN
 u0 = 1.
@@ -80,20 +81,28 @@ def init_data():
     return dx
 
 
+def running_cost(dx):
+    return jnp.array([dx.qpos[7]**2 + dx.qfrc_applied[0]**2])
+
 def step_scan_mjx(carry, _):
     dx = carry
     dx = mjx.step(mx, dx) # Dynamics function
     t = jnp.expand_dims(dx.time, axis=0)
+    cost = running_cost(dx)
     dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[0].set(0.))
-    return (dx), jnp.concatenate([dx.qpos, dx.qvel, t])
+    return (dx), jnp.concatenate([dx.qpos, dx.qvel, cost, t])
 
 
 def simulate_trajectory_mjx(u):
     dx = init_data()
     dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[0].set(u))
     (dx), res = jax.lax.scan(step_scan_mjx, (dx), None, length=Nlength)
-    res, t = res[...,:-1], res[...,-1]
-    return res, t
+    res, cost, t = res[...,:-2], res[...,-2], res[...,-1]
+    return res, cost, t
+
+def compute_trajectory_costs(u):
+    res, cost, t = simulate_trajectory_mjx(u)
+    return cost, res, t
 
 def simulate_trajectory_mj(u):
     d = mujoco.MjData(model)
@@ -112,11 +121,10 @@ def simulate_trajectory_mj(u):
 
 
 
-
-# Nlength = 100
-# res, t = simulate_trajectory_mjx(u0)
-# qpos_mjx, qvel_mjx = res[:,:model.nq], res[:,model.nq:]
-# qpos_mj,qvel_mj, t = simulate_trajectory_mj(u0)
+Nlength = 100
+res, cost, t = simulate_trajectory_mjx(u0)
+qpos_mjx, qvel_mjx = res[:,:model.nq], res[:,model.nq:]
+qpos_mj,qvel_mj, t = simulate_trajectory_mj(u0)
 
 
 
@@ -145,16 +153,32 @@ def visualise(qpos, qvel):
 @jax.jit
 @jax.vmap
 def compute_grad(u):
-    res, t = simulate_trajectory_mjx(u)
-
-    jac_fun = jax.jacrev(lambda x: simulate_trajectory_mjx(x)[0][:,[0]])
+    jac_fun = jax.jacrev(lambda x: simulate_trajectory_mjx(x)[0][:,[0,7]])
     ad_grad = jac_fun(jnp.array(u))
     return ad_grad
 
 
+@jax.jit
+@jax.vmap
+def compute_loss_grad(u):
+    jac_fun = jax.jacrev(lambda x: loss_funct(x))
+    ad_grad = jac_fun(jnp.array(u))
+    return ad_grad
+
+
+cost, res, t = compute_trajectory_costs(u0)
+
+def loss_funct(u):
+    costs = compute_trajectory_costs(u)[0]
+    return jnp.sum(costs, axis=-1)
+
+
 
 ## finite difference mj
-print(compute_grad(jnp.array([0.1, 0.11, 0.12, 0.5 , 0.12])))
+# print(compute_grad(jnp.array([0.1, 0.11, 0.12, 0.5 , 0.12])))
+
+
+
 
 # from the results looks like the gradients between mjx and mj are not the same
 # primarily because the response to the qfrcs_applied is not the same
