@@ -9,6 +9,8 @@ import os
 from copy import copy
 from jax import config
 config.update('jax_default_matmul_precision', 'high')
+config.update("jax_debug_nans", True)
+# config.update("jax_enable_x64", True)
 
 model = mujoco.MjModel.from_xml_path(os.path.join(os.path.dirname(__file__), '../xmls/two_body.xml'))
 mx = mjx.put_model(model)
@@ -82,7 +84,8 @@ def init_data():
 
 
 def running_cost(dx):
-    return jnp.array([dx.qpos[7]**2 + dx.qfrc_applied[0]**2])
+    return jnp.array([dx.qpos[7]**2 + 0.00001*dx.qfrc_applied[0]**2])
+
 
 def step_scan_mjx(carry, _):
     dx = carry
@@ -148,17 +151,18 @@ def visualise(qpos, qvel):
 
 
 # launch visualisation diff threads
+# Nlength = 100
+# res, cost, t = simulate_trajectory_mjx(u0)
+# qpos_mjx, qvel_mjx = res[:,:model.nq], res[:,model.nq:]
 # visualise(qpos_mjx, qvel_mjx)
 
-@jax.jit
-@jax.vmap
-def compute_grad(u):
-    jac_fun = jax.jacrev(lambda x: simulate_trajectory_mjx(x)[0][:,[0,7]])
-    ad_grad = jac_fun(jnp.array(u))
-    return ad_grad
+# @jax.jit
+# @jax.vmap
+# def compute_grad(u):
+#     jac_fun = jax.jacrev(lambda x: simulate_trajectory_mjx(x)[0][:,[0,7]])
+#     ad_grad = jac_fun(jnp.array(u))
+#     return ad_grad
 
-
-@jax.jit
 @jax.vmap
 def compute_loss_grad(u):
     jac_fun = jax.jacrev(lambda x: loss_funct(x))
@@ -171,6 +175,48 @@ cost, res, t = compute_trajectory_costs(u0)
 def loss_funct(u):
     costs = compute_trajectory_costs(u)[0]
     return jnp.sum(costs, axis=-1)
+
+# Gradient descent
+def gradient_descent(x0, learning_rate=0.1, tol=1e-6, max_iter=100):
+    x = x0
+    for i in range(max_iter):
+        # x =jnp.round(x,5)
+        grad = compute_loss_grad(jnp.array([x, 1.,0.2]))[0]
+        x_new = x - learning_rate * grad  # Gradient descent update
+        
+        print(f"Iteration {i}: x = {x}, f(x) = {loss_funct(x)}")
+        
+        # Check for convergence
+        if abs(x_new - x) < tol:
+            break
+        x = x_new
+
+    return x
+
+def visu_u(u):
+    Nlength = 100
+    res, cost, t = simulate_trajectory_mjx(u)
+    qpos_mjx, qvel_mjx = res[:,:model.nq], res[:,model.nq:]
+    visualise(qpos_mjx, qvel_mjx)
+
+
+# Initial guess
+x0 = 2.
+# Run gradient descent
+# optimal_x = gradient_descent(x0)
+# print(f"Optimal x: {optimal_x}, f(x): {loss_funct(optimal_x)}")
+
+
+# with jax.disable_jit():
+    # print("Computing grad..")
+    # compute_loss_grad(jnp.array([4.5631613, 1.1,0.25]))[0]
+
+
+# nan values
+# compute_loss_grad(jnp.array([4.5631613, 1.1,0.25]))[0]
+
+# u = 4.563199 # working
+# u = 4.5631999 # not working
 
 
 
