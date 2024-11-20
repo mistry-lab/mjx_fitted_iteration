@@ -122,7 +122,6 @@ def gradient_descent(qpos, x0, learning_rate=0.1, tol=1e-6, max_iter=100):
 
     return x
 
-
 if __name__ == "__main__":
 
     # Load mj and mjx model
@@ -132,7 +131,7 @@ if __name__ == "__main__":
 
     qx0, qz0, qx1 = -0.375, 0.1, -0.2 # Inititial positions
     idata.qpos[0],idata.qpos[2], idata.qpos[7] = qx0, qz0, qx1
-    Nlength = 250 # horizon lenght
+    Nlength = 250 # use smaller nlength to show nan behaviour
 
     u0 = 15.
     batch = 1
@@ -152,11 +151,11 @@ if __name__ == "__main__":
     # Initial position
     qpos = jnp.expand_dims(jnp.array(idata.qpos), axis=0)
     # Run gradient descent
-    optimal_x = gradient_descent(qpos, x0, learning_rate=1.)
+    optimal_x = gradient_descent(qpos, x0, learning_rate=1., max_iter=10)
 
     # Check the gradient along the trajectory
-    get_traj_grad(qpos, x0)
-
+    grads = get_traj_grad(qpos, x0)
+    print(grads)
     # Observation
     # Box -- Sphere example. 
     # Nan values directly on the first call. (unless u = 0.)
