@@ -38,8 +38,6 @@ def compute_trajectory_costs(qpos_init, u):
 
 
 def visu_u(u0):
-    """ Visualisation for a single force."""
-
     def visualise(qpos, qvel):
         import time
         from mujoco import viewer

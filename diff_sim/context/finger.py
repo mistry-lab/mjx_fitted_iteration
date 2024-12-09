@@ -19,14 +19,14 @@ def gen_model() -> mujoco.MjModel:
 _cfg = Config(
     lr=5e-3,
     seed=4,
-    batch=512,
+    batch=64,
     samples=1,
     epochs=1000,
-    eval=50,
+    eval=1,
     num_gpu=1,
-    dt=0.01,
-    ntotal=2560,
-    nsteps=16,
+    dt=0.0075,
+    ntotal=600,
+    nsteps=600,
     mx=mjx.put_model(gen_model()),
     gen_model=gen_model
 )
@@ -46,7 +46,7 @@ class Policy(Network):
         for layer in self.layers[:-1]:
             x = self.act(layer(x))
         x = self.layers[-1](x).squeeze()
-        x = jnp.tanh(x) * .5
+        x = jnp.tanh(x) * 0.5
         return x
 
 
@@ -66,7 +66,7 @@ def state_decoder(x: jnp.ndarray) -> jnp.ndarray:
 def control_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = dx.ctrl
     return jnp.dot(
-        x.T, jnp.dot(jnp.diag(jnp.array([0.01, 0.01])), x)
+        x.T, jnp.dot(jnp.diag(jnp.array([1, 1])), x)
     )
 
 def run_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
@@ -74,25 +74,24 @@ def run_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     vel = state_encoder(mx, dx)[5]
     x = jnp.array([pos, vel])
     return jnp.dot(
-        x.T, jnp.dot(jnp.diag(jnp.array([100, 1])), x)
+        x.T, jnp.dot(jnp.diag(jnp.array([1, 0])), x)
     )
 
 def terminal_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     pos = state_encoder(mx, dx)[2]
     vel = state_encoder(mx, dx)[5]
     x = jnp.array([pos, vel])
-    return _cfg.dt * jnp.dot(
-        x.T, jnp.dot(jnp.diag(jnp.array([100, 1])), x)
+    return jnp.dot(
+        x.T, jnp.dot(jnp.diag(jnp.array([1, 0])), x)
     )
 
 def set_data(mx: mjx.Model, dx: mjx.Data, ctx: Context, key: jnp.ndarray) -> mjx.Data:
-    theta1 = jax.random.uniform(key, (1,), minval=-.1, maxval=4)
+    theta1 = jax.random.uniform(key, (1,), minval=1.5, maxval=1.5)
     theta2 = jnp.array([0.])
     _, key = jax.random.split(key)
-    theta3 = jax.random.uniform(key, (1,), minval=0, maxval=2 * jnp.pi)
+    theta3 = jax.random.uniform(key, (1,), minval=-.8, maxval=-.8)
     qpos = jnp.concatenate([theta1, theta2, theta3])
     qvel = jnp.array([0., 0., 0.])
-
     dx = dx.replace(qpos=dx.qpos.at[:].set(qpos), qvel=dx.qvel.at[:].set(qvel))
     return dx
 
@@ -102,6 +101,17 @@ def gen_network(n: int) -> Network:
 
 def is_terminal(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     time_limit = (dx.time/mx.opt.timestep) > (_cfg.ntotal - 1)
+    # check if the first and second joint do 1 full loop (2.pi)
+    # limit1 = jnp.abs(dx.qpos[0]) > 2*jnp.pi
+    # limit2 = jnp.abs(dx.qpos[1]) > 2*jnp.pi
+    # # use lax.cond to check if the limits are reached
+    # def true_fn(): return jnp.array([True])
+    # def time_fn(): return jnp.array([time_limit])
+    # cond = jax.lax.cond(
+    #     jnp.logical_or(limit1, limit2),
+    #     true_fn,
+    #     time_fn,
+    # )
     return jnp.array([time_limit])
 
 ctx = Context(

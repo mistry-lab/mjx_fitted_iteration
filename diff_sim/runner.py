@@ -6,8 +6,10 @@ import mujoco
 from mujoco import viewer
 import equinox as eqx
 import optax
-from jax import config
 import jax
+from jax import config
+config.update('jax_default_matmul_precision', 'high')
+config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import contextlib  # Added for handling headless mode
 from diff_sim.context.tasks import ctxs
@@ -15,15 +17,15 @@ from diff_sim.utils.tqdm import trange
 from diff_sim.utils.mj import visualise_policy, visualise_traj
 from diff_sim.utils.generic import save_model
 from diff_sim.utils.mj_data_manager import create_data_manager
+from diff_sim.simulate import controlled_simulate
 
-config.update('jax_default_matmul_precision', 'high')
 
 # stop when you hit NaNs in jax
 # jax.config.update("jax_debug_nans", True)
 if __name__ == '__main__':
     try:
         parser = argparse.ArgumentParser()
-        parser.add_argument("--task", help="task name", default="snake")
+        parser.add_argument("--task", help="task name", default="finger")
         parser.add_argument("--wb_project", help="wandb project name", default="not_named")
         parser.add_argument("--headless", action="store_true", help="Disable visualization")
         parser.add_argument(
@@ -74,8 +76,17 @@ if __name__ == '__main__':
                 sum_loss += loss_value.item()
                 sum_cost += traj_cost.item()
                 sum_reset += jnp.sum(terminated).item()
+
                 if e % iter == 0:
-                    log_data = {"Loss avg": round(sum_loss/iter, 3), "Traj Cost avg": round(sum_cost/iter, 3), "nreset avg": sum_reset//iter}
+                    key, xkey, tkey = jax.random.split(key, num = 3)
+                    dx_vis = data_manager.create_data(ctx.cfg.mx, ctx, 2, xkey)
+                    _, _, _, costs, _, _ = eqx.filter_jit(controlled_simulate)(dx_vis, ctx, net, tkey, ctx.cfg.ntotal)
+                    log_data = {
+                        "Loss avg": round(sum_loss/iter, 3),
+                        "Traj Cost avg": jnp.mean(jnp.sum(costs, axis=-1)),
+                        "nreset avg": sum_reset
+                    }
+
                     wandb.log(log_data)
                     es.set_postfix(log_data)
                     sum_loss, sum_cost, sum_reset = 0, 0, 0

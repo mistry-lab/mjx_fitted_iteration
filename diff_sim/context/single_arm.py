@@ -28,7 +28,7 @@ _cfg = Config(
     epochs=1000,
     eval=50,
     num_gpu=1,
-    dt=0.005,
+    dt=0.01,
     ntotal=512,
     nsteps=32,
     mx=mjx.put_model(gen_model()),
@@ -91,7 +91,7 @@ def run_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = state_encoder(mx, dx)
     # bound_cost =jnp.maximum(jnp.abs(x[0]) - 2*jnp.pi, 0)
     state_cost =  jnp.dot(
-        x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 0, 0,1000.,1000., 0, 0, .0, .0, .0, 0, 0])), x)
+        x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 1000, 1000,0,0., 0, 0, .0, .0, .0, 0, 0])), x)
     )
     state_cost2 =  jnp.dot(
         x.T, jnp.dot(jnp.diag(jnp.array([0, 0, 0, 100, 100,0.,0., 0, 0, .0, .0, .0, 0, 0])), x)

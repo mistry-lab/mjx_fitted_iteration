@@ -13,8 +13,8 @@ def controlled_simulate(dxs:mjx.Data, ctx: Context, net: Network, key: jnp.ndarr
         return jnp.concatenate([dx.qpos, dx.qvel], axis=0)
 
     def cost_fn(mx:mjx.Model , dx:mjx.Data):
-        ucost = ctx.cbs.control_cost(mx,dx) * ctx.cfg.dt
-        xcost = ctx.cbs.run_cost(mx,dx) * ctx.cfg.dt
+        ucost = ctx.cbs.control_cost(mx,dx)
+        xcost = ctx.cbs.run_cost(mx,dx)
         return jnp.array([xcost + ucost])
 
     # TODO: append a flag with x that signifies wether you should terminate or not

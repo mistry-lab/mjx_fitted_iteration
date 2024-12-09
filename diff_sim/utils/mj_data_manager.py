@@ -23,7 +23,7 @@ class DataManager(eqx.Module):
 
     def reset_data(
             self, mx: mjx.Model, dxs: mjx.Data, ctx: Context, key: jnp.ndarray, terminated: jnp.ndarray
-    ) -> Tuple[mjx.Data, jnp.ndarray]:
+    ) -> mjx.Data:
         indices_to_reset = jnp.where(terminated)[0]
         if indices_to_reset.size > 0:
             new_dxs = self.create_data(mx, ctx, indices_to_reset.size, key)

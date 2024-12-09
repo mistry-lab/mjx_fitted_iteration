@@ -1,8 +1,7 @@
 import time
 import numpy as np
 import mujoco
-import mujoco.mjx as mjx
-import mujoco.viewer
+from mujoco import viewer
 import jax
 from diff_sim.context.meta_context import Context
 from diff_sim.simulate import controlled_simulate
@@ -38,9 +37,8 @@ def visualise_policy(
 
 
 def visualise_traj(
-        x, d: mujoco.MjData, m: mujoco.MjModel, viewer: mujoco.viewer.Handle, ctx: Context
+        x: jax.numpy.ndarray, d: mujoco.MjData, m: mujoco.MjModel, viewer: mujoco.viewer.Handle
 ):
-    x = jax.vmap(jax.vmap(ctx.cbs.state_decoder))(x)
     x = np.array(x)
     for b in range(x.shape[0]):
         for i in range(x.shape[1]):
@@ -54,3 +52,24 @@ def visualise_traj(
             time_until_next_step = m.opt.timestep - (time.time() - step_start)
             if time_until_next_step > 0:
                 time.sleep(time_until_next_step)
+
+
+
+def visualise_traj_generic(
+        x, d: mujoco.MjData, m: mujoco.MjModel
+):
+
+    with viewer.launch_passive(m, d) as v:
+        x = np.array(x)
+        for b in range(x.shape[0]):
+            for i in range(x.shape[1]):
+                step_start = time.time()
+                qpos = x[b, i, :m.nq]
+                qvel = x[b, i, m.nq:]
+                d.qpos[:] = qpos
+                d.qvel[:] = qvel
+                mujoco.mj_forward(m, d)
+                v.sync()
+                time_until_next_step = m.opt.timestep - (time.time() - step_start)
+                if time_until_next_step > 0:
+                    time.sleep(time_until_next_step)
