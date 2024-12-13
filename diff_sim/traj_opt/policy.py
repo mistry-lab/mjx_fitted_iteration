@@ -79,12 +79,14 @@ class Policy:
         U0: initial guess (N, nu)
         Returns: optimized U
         """
+        opt_model = None
         for i in range(max_iter):
             params, static = equinox.partition(model, equinox.is_array)
             g = self.grad_loss(params, static)
             f_val = self.loss(params, static)
             updates, state = optim.update(g, state, model)
             model = equinox.apply_updates(model, updates)
+            opt_model = model
             print(f"Iteration {i}: cost={f_val}")
         return model
 

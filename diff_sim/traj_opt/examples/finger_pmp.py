@@ -1,4 +1,6 @@
 import jax
+jax.config.update("jax_enable_x64", True)
+jax.config.update('jax_default_matmul_precision', 'high')
 import jax.numpy as jnp
 import mujoco
 from mujoco import mjx
@@ -20,9 +22,9 @@ if __name__ == "__main__":
     mx = mjx.put_model(model)
     dx = mjx.make_data(mx)
     dx = jax.tree.map(upscale, dx)
-    qpos_init = jnp.array([1.5, 0, -.8])
-    Nsteps, nu = 600, 1
-    U0 = jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 0
+    qpos_init = jnp.array([-.8, 0, -.8])
+    Nsteps, nu = 300, 1
+    U0 = jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 2
 
     def set_control(dx, u):
         # u = jnp.tanh(u) * 0.5
@@ -31,7 +33,7 @@ if __name__ == "__main__":
     def running_cost(dx):
         pos_finger = dx.qpos[2]
         u = dx.ctrl
-        return 0.01 * pos_finger ** 2 + jnp.sum(u ** 2)
+        return 0.01 * pos_finger ** 2 + 0.01 * jnp.sum(u ** 2)
 
     def terminal_cost(dx):
         pos_finger = dx.qpos[2]

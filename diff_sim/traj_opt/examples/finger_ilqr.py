@@ -22,20 +22,21 @@ if __name__ == "__main__":
     mx = mjx.put_model(model)
     dx = mjx.make_data(mx)
     dx = jax.tree.map(upscale, dx)
-    qpos_init = jnp.array([-0.8, 0, -0.8])
-    Nsteps, nu = 600, 1
-    U0 = jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 10
+    qpos_init = jnp.array([1, 0, -.8])
+    Nsteps, nu = 300, 1
+    U0 = jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 2
 
     def set_control(dx, u):
+        # u = jnp.tanh(u) * 0.5
         return dx.replace(ctrl=dx.ctrl.at[:].set(u))
 
     def running_cost(dx):
-        pos_finger = dx.qpos[2]
+        pos_finger = (dx.qpos[2] - jnp.pi * 2)
         u = dx.ctrl
-        return 0.01 * pos_finger ** 2 +  0.01 * jnp.sum(u ** 2)
+        return 0.01 * pos_finger ** 2 + jnp.sum(u ** 2)
 
     def terminal_cost(dx):
-        pos_finger = dx.qpos[2]
+        pos_finger = (dx.qpos[2] - jnp.pi * 2)
         return 1 * pos_finger ** 2
 
     ilqr_step = make_ilqr_step(
