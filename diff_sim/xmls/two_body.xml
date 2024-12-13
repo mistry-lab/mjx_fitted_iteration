@@ -16,35 +16,23 @@
     <asset>
         <texture type="skybox" name="skybox" builtin="gradient" mark="random" rgb1="0.4 0.6 0.8" rgb2="0 0 0" markrgb="1 1 1" width="800" height="4800" />
         <texture type="2d" name="grid" builtin="checker" mark="edge" rgb1="0.1 0.2 0.3" rgb2="0.2 0.3 0.4" markrgb="0.2 0.3 0.4" width="300" height="300" />
-        <material name="ball_material" texture="skybox" />
         <material name="grid" texture="grid" texuniform="true" reflectance="0.2" />
-        <material name="self" rgba="0.7 0.5 0.3 1" />
-        <material name="self_default" rgba="0.7 0.5 0.3 1" />
-        <material name="self_highlight" rgba="0 0.5 0.3 1" />
-        <material name="effector" rgba="0.7 0.4 0.2 1" />
-        <material name="effector_default" rgba="0.7 0.4 0.2 1" />
-        <material name="effector_highlight" rgba="0 0.5 0.3 1" />
-        <material name="decoration" rgba="0.3 0.5 0.7 1" />
-        <material name="eye" rgba="0 0.2 1 1" />
-        <material name="target" rgba="0.6 0.3 0.3 1" />
-        <material name="target_default" rgba="0.6 0.3 0.3 1" />
-        <material name="target_highlight" rgba="0.6 0.3 0.3 0.4" />
     </asset>
 
     <worldbody>
         <geom name="ground" size="1 1 0.1" pos="-0.0 0 -0.013" type="plane" rgba=".123 .140 .28 1" contype="1" conaffinity="2"/>
 
         <body name="object1" pos="0.0 0.0 0.035">
-            <joint type="free" damping="0.0001"/>
+            <joint name="free_joint_body_1" type="free" damping="0.0001"/>
             <camera name="cam1" pos="0 -0.3 0.3" xyaxes="1 0 0 0 0.7 0.7"/>
-            <!-- <geom name="pointmass1" type="sphere" size=".042" material="grid" mass=".01" condim="3"  group="2" solimp="0.1 0.95 0.1 0.5 2" solref="0.02 1.0"/> -->
-            <geom name="pointmass1" type="box" size=".042 0.042 0.042" material="grid" mass=".01" condim="3"  group="2" solimp="0.1 0.95 0.1 0.5 2" solref="0.02 1.0"/>
+            <geom name="pointmass1" type="sphere" size=".042" material="grid" mass=".01" condim="3"  group="2" solimp="0.1 0.95 0.1 0.5 2" solref="0.02 1.0"/>
+            <!-- <geom name="pointmass1" type="capsule" size=".042 0.01" material="grid" mass=".01" condim="3" contype="7"  group="2" solref="0.01 1.0"/> -->
         </body>
 
         <body name="object2" pos="0.0 0.0 0.035">
-            <joint type="free" damping="0.0001"/>
+            <joint name="free_joint_body_2" type="free" damping="0.0001"/>
             <camera name="cam2" pos="0 -0.3 0.3" xyaxes="1 0 0 0 0.7 0.7"/>
-            <geom name="pointmass2" type="sphere" size=".042" material="grid" mass=".01" condim="3"  group="2" solimp="0.1 0.95 0.1 0.5 2" solref="0.02 1.0"/>
+            <geom name="pointmass2" type="sphere" size=".042" material="grid" mass=".01" condim="3" contype="7"  solimp="0.1 0.95 0.1 0.5 2" friction="1.1 0.01 0.003" group="2" solref="0.01 1.0"/>
         </body>
         <body mocap="true" name="mocap_target">
           <geom type="sphere" size="0.025" rgba="1 0 0 1" contype="0" conaffinity="0"/>

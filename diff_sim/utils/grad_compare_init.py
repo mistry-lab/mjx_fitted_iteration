@@ -1,3 +1,6 @@
+import os
+os.environ['JAX_TRACEBACK_FILTERING'] = 'off'
+
 import jax
 from jax import config
 config.update('jax_default_matmul_precision', 'high')
@@ -6,23 +9,65 @@ config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import mujoco
 from mujoco import mjx
+import os
+from jax import config
+from mujoco.mjx._src.forward import forward, euler, fwd_position, fwd_velocity, fwd_acceleration, fwd_actuation
+from mujoco.mjx._src import solver
+import functools
+# Jax configs
+config.update('jax_default_matmul_precision', 'high')
+# config.update("jax_debug_nans", True)
+# config.update("jax_debug_infs", True)
+
+# config.update("jax_enable_x64", True)
+
+
+def debug_wrapper(func, name):
+    def wrapped(*args, **kwargs):
+        result = func(*args, **kwargs)
+        jax.debug.print(f"{name} output: {result}")
+        if jnp.any(jnp.isnan(result)):
+            jax.debug.print(f"NaN detected in {name}")
+        return result
+    return wrapped
+
+def named_scope(fn, name: str = ''):
+  @functools.wraps(fn)
+  def wrapper(*args, **kwargs):
+    with jax.named_scope(name or getattr(fn, '__name__')):
+      res = fn(*args, **kwargs)
+    return res
+
+  return wrapper
+
 
 def running_cost(dx):
     return jnp.array([dx.qpos[7] ** 2 + 0.1 * dx.qfrc_applied[0] ** 2])
 
+dfwd_position = debug_wrapper(fwd_position, "fwd_position")
+
+def step(mx,dx):
+    # dx = forward(mx, dx)
+    # fwd_position_no_jit = jax.jit(fwd_position, static_argnames=())  # Replace with jit-free execution
+    dx = dfwd_position(mx, dx)
+    dx = fwd_velocity(mx, dx)
+    dx = fwd_actuation(mx, dx)
+    dx = fwd_acceleration(mx, dx)
+    dx = named_scope(solver.solve)(mx, dx)
+    dx = euler(mx, dx)
+    return dx
 
 @jax.vmap
 def simulate_trajectory_mjx(qpos_init, u):
     """ Simulate the impulse of the force. Return states and costs."""
-
     def step_scan_mjx(carry, _):
         dx = carry
-        dx = mjx.step(mx, dx)  # Dynamics function
+        dx = mjx.step(mx, dx) # Dynamics function
+        # dx = step(mx,dx)
         t = jnp.expand_dims(dx.time, axis=0)
         cost = running_cost(dx)
         dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[:].set(jnp.zeros_like(dx.qfrc_applied)))
         return (dx), jnp.concatenate([dx.qpos, dx.qvel, cost, t])
-
     dx = mjx.make_data(mx)
     dx = dx.replace(qpos=dx.qpos.at[:].set(qpos_init))
     dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[:].set(u))
@@ -36,10 +81,8 @@ def compute_trajectory_costs(qpos_init, u):
     res, cost, t = simulate_trajectory_mjx(qpos_init, u)
     return cost, res, t
 
-
 def visu_u(u0):
     """ Visualisation for a single force."""
-
     def visualise(qpos, qvel):
         import time
         from mujoco import viewer
@@ -57,23 +100,21 @@ def visu_u(u0):
                 if time_until_next_step > 0:
                     # time.sleep(time_until_next_step)
                     time.sleep(0.075)
-
     qpos = jnp.expand_dims(jnp.array(idata.qpos), axis=0)
     qpos = jnp.repeat(qpos, 1, axis=0)
 
     u = set_u(jnp.array([u0]))
     res, _, _ = simulate_trajectory_mjx(qpos, u)
-    qpos_mjx, qvel_mjx = res[0, :, :model.nq], res[0, :, model.nq:]
+    qpos_mjx, qvel_mjx = res[0,:,:model.nq], res[0,:,model.nq:]
     visualise(qpos_mjx, qvel_mjx)
 
 
 @jax.jit
 def compute_loss_grad(qpos_init, u):
     """ Compute gradient of loss wrt u"""
-    jac_fun = jax.jacrev(lambda x: loss(qpos_init, x), has_aux=True)
-    ad_grad, costs = jac_fun(jnp.array(u))
-    return ad_grad, costs
-
+    jac_fun = jax.jacrev(lambda x: loss(qpos_init,x))
+    ad_grad = jac_fun(jnp.array(u))
+    return ad_grad
 
 @jax.jit
 def loss(qpos_init, u):
@@ -95,9 +136,9 @@ def set_u(u0):
 
 
 @jax.jit
-def compute_traj_grad_wrt_u(qpos_init, u):
+def compute_traj_grad_wrt_u(qpos_init,u):
     """ Gradient vector to debug the NaN occurence."""
-    jac_fun = jax.jacrev(lambda x: compute_trajectory_costs(qpos_init, set_u(x))[0])
+    jac_fun = jax.jacrev(lambda x: compute_trajectory_costs(qpos_init,set_u(x))[0])
     ad_grad = jac_fun(jnp.array(u))
     return ad_grad
 
@@ -107,16 +148,13 @@ def gradient_descent(qpos, x0, learning_rate=0.1, tol=1e-6, max_iter=100):
     """ Optimise initial force."""
     x = x0
     for i in range(max_iter):
-        grad, costs = compute_loss_grad(qpos, x)
-        x_new = x - learning_rate * grad[0]  # Gradient descent update
-
-        print(f"Iteration {i}: x = {x_new}, f(x) = {loss(qpos, x_new)}, Costs: {costs}")
+        grad = compute_loss_grad(qpos, x)[0]
+        x_new = x - learning_rate * grad  # Gradient descent update
+        
+        print(f"Iteration {i}: x = {x_new}, f(x) = {loss(qpos, x_new)}")
 
         # Check for convergence
         if abs(x_new - x) < tol or jnp.isnan(grad):
-            # print if it has converged or not
-            print(f"Converged: {abs(x_new - x) < tol}")
-            print(f"Gradient is NaN: {jnp.isnan(grad)}")
             break
         x = x_new
 
@@ -208,3 +246,21 @@ visu_u(optimal_u)
 # print(compute_traj_grad_wrt_u(qpos, jnp.array([2.8]))) # Working
 # print(compute_traj_grad_wrt_u(qpos, jnp.array([2.9]))) # NaNs
 
+    qx0, qz0, qx1 = -0.375, 0.1, -0.2 # Inititial conditions
+    idata.qpos[0],idata.qpos[2], idata.qpos[7] = qx0, qz0, qx1
+    Nlength = 500 # horizon lenght
+
+    u0, batch = 20., 1 # Initial guess
+    u0_jnp = jnp.array([u0])
+    qpos = jnp.expand_dims(jnp.array(idata.qpos), axis=0)
+    qpos = jnp.repeat(qpos,batch, axis = 0)
+
+    # Visualise guess
+    visu_u(u0)
+
+    # Run gradient descent
+    optimal_x = gradient_descent(qpos, u0_jnp, learning_rate=0.1)   
+
+    # Check the gradient along the trajectory, debugging
+    # print(compute_traj_grad_wrt_u(qpos, jnp.array([2.8]))) # Working
+    # print(compute_traj_grad_wrt_u(qpos, jnp.array([2.9]))) # NaNs
