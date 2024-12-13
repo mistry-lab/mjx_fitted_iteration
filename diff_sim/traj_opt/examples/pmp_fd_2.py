@@ -6,8 +6,6 @@ from jax import config
 from dataclasses import dataclass
 from typing import Callable
 
-from numpy.ma.core import inner
-
 config.update('jax_default_matmul_precision', 'high')
 config.update("jax_enable_x64", True)
 
@@ -57,7 +55,7 @@ def step_dynamics_bwd(res, g):
     g_dx_next = g  # same structure as dx_next
     # We'll do finite differences on dx_in and ctrl_in to figure out
     # how dx_next changes w.r.t. those inputs.
-    eps = 1
+    eps = 1e-5
     # Flatten dx_in into e.g. qpos and qvel if needed, or treat them as single objects.
     # For simplicity, let's assume we only do FD on qpos, qvel, ctrl.
     # If dx has sensors, contact, etc., you'd handle them likewise.
@@ -65,30 +63,39 @@ def step_dynamics_bwd(res, g):
     # 1) Finite difference wrt ctrl_in
     ctrl_shape = ctrl_in.shape
     ctrl_flat = ctrl_in.ravel()
+
     def fd_ctrl_plusminus(idx):
+        eps = 1e-5
+        # Create the epsilon-perturbed control
         e = jnp.zeros_like(ctrl_flat).at[idx].set(eps)
         ctrl_plus = (ctrl_flat + e).reshape(ctrl_shape)
-        # ctrl_minus = (ctrl_flat - e).reshape(ctrl_shape)
-        dx_plus = set_control(dx_in, ctrl_plus)
-        # dx_minus = set_control_fn_in(dx_in, ctrl_minus)
-        dx_next_plus = mjx.step(mx_in, dx_plus)
-        # dx_next_minus = mjx.step(mx_in, dx_minus)
-        plus_flat = jnp.concatenate([dx_next_plus.qpos, dx_next_plus.qvel])
-        dx_in_flat = jnp.concatenate([dx_in.qpos, dx_in.qvel])
-        # minus_flat = jnp.concatenate([dx_next_minus.qpos, dx_next_minus.qvel])
-        grad_i = (plus_flat - dx_in_flat) / eps
-        return grad_i
-    ctrl_indices = jnp.arange(ctrl_flat.size)
-    dfdu = jax.vmap(fd_ctrl_plusminus)(ctrl_indices)
-    dfdu = dfdu.reshape(mx_in.nq + mx_in.nv, mx_in.nu)
-    base_flat = jnp.concatenate([g_dx_next.qpos, g_dx_next.qvel])
-    d_ctrl = jnp.dot(base_flat, dfdu)
 
-    # step_dynamics was (mx, dx, ctrl, set_control_fn)
-    # Return vjp for each:
-    d_mx = None  # ignoring partial derivative wrt MuJoCo model
-    d_dx_in = jax.tree_map(jnp.zeros_like, dx_in)  # ignoring gradient wrt dx
-    return (d_mx, d_dx_in, d_ctrl)
+        # Apply control & step
+        dx_plus = set_control(dx_in, ctrl_plus)
+        dx_next_plus = mjx.step(mx_in, dx_plus)
+
+        # 1) Forward difference across all fields of dx
+        dx_diff = jax.tree_map(lambda new, old: (new - old) / eps, dx_next_plus, dx_in)
+
+        def multiply_conditionally(diff_tree, grad_tree):
+            def maybe_multiply(d_leaf, g_leaf):
+                # Check if g_leaf has float0 dtype (meaning zero-sized gradient)
+                if jax.dtypes.result_type(g_leaf) == jax.dtypes.float0:
+                    jnp.zeros_like(d_leaf)
+                else:
+                    return d_leaf * g_leaf
+
+            return jax.tree_map(maybe_multiply, diff_tree, grad_tree)
+
+        diff_times_g = multiply_conditionally(dx_diff, g_dx_next)
+
+        return diff_times_g  # shape ()
+
+    ctrl_indices = jnp.arange(ctrl_flat.size)
+    d_ctrl = jax.vmap(fd_ctrl_plusminus)(ctrl_indices)
+    d_dx_in = jax.tree_map(jnp.ones_like, dx_in)  # ignoring gradient wrt dx
+    return (None, d_dx_in, d_ctrl)
+
 step_dynamics.defvjp(step_dynamics_fwd, step_dynamics_bwd)
 
 @equinox.filter_jit
@@ -111,8 +118,8 @@ def simulate_trajectory(mx, qpos_init, running_cost_fn, terminal_cost_fn, U):
 
 def make_loss(mx, qpos_init, running_cost_fn, terminal_cost_fn):
     """
-    The loss function calls simulate_trajectory, 
-    which uses FD for dynamics partial derivatives, 
+    The loss function calls simulate_trajectory,
+    which uses FD for dynamics partial derivatives,
     but normal AD for cost.
     """
     def loss(U):
