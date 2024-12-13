@@ -17,14 +17,14 @@ def upscale(x):
     return x
 
 if __name__ == "__main__":
-    # path = "../../xmls/finger_mjx.xml"
-    path = "diff_sim/xmls/finger_mjx.xml"
+    path = "../../xmls/finger_mjx.xml"
+    # path = "diff_sim/xmls/finger_mjx.xml"
     model = mujoco.MjModel.from_xml_path(path)
     mx = mjx.put_model(model)
     dx = mjx.make_data(mx)
     dx = jax.tree.map(upscale, dx)
     qpos_init = jnp.array([-.8, 0, -.8])
-    Nsteps, nu = 300, 1
+    Nsteps, nu = 300, 2
     U0 = jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 2
 
     # def set_control(dx, u):
