@@ -45,7 +45,7 @@ def step_dynamics(mx, dx, ctrl):
 def step_dynamics_fwd(mx, dx, ctrl):
     dx_next = step_dynamics(mx, dx, ctrl)
     # Save (dx, ctrl) for the backward pass
-    return dx_next, (mx, dx, ctrl)
+    return dx_next, (mx, dx, ctrl, dx_next)
 
 
 def step_dynamics_bwd(res, g):
@@ -53,35 +53,43 @@ def step_dynamics_bwd(res, g):
     Custom backward for the MuJoCo step. The 'g' is the cotangent w.r.t. dx_next.
     We want to define partial derivatives only for dx, ctrl via finite differences.
     """
-    mx_in, dx_in, ctrl_in = res  # from forward pass
-    g_dx_next = g  # same structure as dx_next
+    mx_in, dx_in, ctrl_in, dx_next = res# from forward pass
+
+    g_dx_next = g  # same structure as dx_next1
     # We'll do finite differences on dx_in and ctrl_in to figure out
     # how dx_next changes w.r.t. those inputs.
-    eps = 1
+    eps = .000001
     # Flatten dx_in into e.g. qpos and qvel if needed, or treat them as single objects.
     # For simplicity, let's assume we only do FD on qpos, qvel, ctrl.
     # If dx has sensors, contact, etc., you'd handle them likewise.
     # We'll separate logic for dx vs. ctrl.
     # 1) Finite difference wrt ctrl_in
+
     ctrl_shape = ctrl_in.shape
     ctrl_flat = ctrl_in.ravel()
     def fd_ctrl_plusminus(idx):
+        # import jax
         e = jnp.zeros_like(ctrl_flat).at[idx].set(eps)
         ctrl_plus = (ctrl_flat + e).reshape(ctrl_shape)
-        # ctrl_minus = (ctrl_flat - e).reshape(ctrl_shape)
+        # ctrl_in = (ctrl_flat).reshape(ctrl_shape)
         dx_plus = set_control(dx_in, ctrl_plus)
         # dx_minus = set_control_fn_in(dx_in, ctrl_minus)
         dx_next_plus = mjx.step(mx_in, dx_plus)
         # dx_next_minus = mjx.step(mx_in, dx_minus)
         plus_flat = jnp.concatenate([dx_next_plus.qpos, dx_next_plus.qvel])
-        dx_in_flat = jnp.concatenate([dx_in.qpos, dx_in.qvel])
+        dx_in_flat = jnp.concatenate([dx_next.qpos, dx_next.qvel])
         # minus_flat = jnp.concatenate([dx_next_minus.qpos, dx_next_minus.qvel])
         grad_i = (plus_flat - dx_in_flat) / eps
+        # jax.debug.print("\n\n")
+        # jax.debug.print("plus_flat = {}", plus_flat)
+        # jax.debug.print("dx_in_flat = {}", dx_in_flat)
+        # jax.debug.breakpoint()
         return grad_i
     ctrl_indices = jnp.arange(ctrl_flat.size)
     dfdu = jax.vmap(fd_ctrl_plusminus)(ctrl_indices)
     dfdu = dfdu.reshape(mx_in.nq + mx_in.nv, mx_in.nu)
     base_flat = jnp.concatenate([g_dx_next.qpos, g_dx_next.qvel])
+    
     d_ctrl = jnp.dot(base_flat, dfdu)
 
     # step_dynamics was (mx, dx, ctrl, set_control_fn)
@@ -89,6 +97,7 @@ def step_dynamics_bwd(res, g):
     d_mx = None  # ignoring partial derivative wrt MuJoCo model
     d_dx_in = jax.tree_map(jnp.zeros_like, dx_in)  # ignoring gradient wrt dx
     return (d_mx, d_dx_in, d_ctrl)
+
 step_dynamics.defvjp(step_dynamics_fwd, step_dynamics_bwd)
 
 @equinox.filter_jit
@@ -111,8 +120,8 @@ def simulate_trajectory(mx, qpos_init, running_cost_fn, terminal_cost_fn, U):
 
 def make_loss(mx, qpos_init, running_cost_fn, terminal_cost_fn):
     """
-    The loss function calls simulate_trajectory, 
-    which uses FD for dynamics partial derivatives, 
+    The loss function calls simulate_trajectory,
+    which uses FD for dynamics partial derivatives,
     but normal AD for cost.
     """
     def loss(U):
