@@ -47,57 +47,29 @@ def f(xs):
 print("First test, L = x3, x_n = 0.5*x_n-1 + u")
 print("Gradient wrt U = [u0, u1, u2] : ", jax.grad(f)(jnp.array([10.,10.,10.])))
 
+#########################################
+# Test 2 with running and terminal cost
 
-############################
-# Test 2
+def running_costs(x,u):
+    return x + u 
 
-# def cost(x,u):
-#     return x + u
+def terminal_cost(x):
+    return x
 
-# @jax.custom_vjp
-# def step2(carry, u):
-#     x = carry
-#     return 0.5*x + u # Updated carry and output for the sequence
+def f(us,x0):
+    def f_scan(carry, x):
+        
+        step_costs = running_costs(carry,x)
+        new_carry = step(carry, x)  # Pass both carry and sequence element
+        return new_carry, step_costs
 
-# # Forward pass for the custom VJP
-# def step2_fwd(x, u):
-#     result = 0.5*x + u
-#     running_cost = cost(x, u)  # Calculate the cost for this step
-#     state = (x, u)  # Save x and u for the backward pass
-#     return result, (running_cost, state)
+    final_carry, step_costs = jax.lax.scan(f_scan, init=x0[0], xs=us)
+    # jax.debug.print("carry : {}",final_carry)
+    tcost = terminal_cost(final_carry)
+    cost = jnp.sum(step_costs) + tcost
+    return cost
 
-# # # Backward pass for the custom VJP
-# def step2_bwd(residual, g):
-#     running_cost, state = residual
-#     df_dx = 0.5  # Derivative w.r.t. x
-#     df_du = 1.0  # Derivative w.r.t. u
-#     grad_x = g * df_dx
-#     grad_u = g * df_du
-#     # grad_cost = running_cost  # The gradient of the cost, passed from the running cost
+print("\n\n")
+print("Second test, L = x0 + u0 + ... + u2 + x3, x_n = 0.5*x_n-1 + u")
+print("Gradient wrt U = [u0, u1, u2] : ", jax.grad(f)(jnp.array([0.,2.,2.]) , jnp.array([1.])))
 
-#     # Return gradients for both inputs (x and u), and also return the gradient of the cost
-#     return grad_x, grad_u
-
-# # Attach the forward and backward passes to the custom VJP
-# step2.defvjp(step2_fwd, step2_bwd)
-
-
-# def f2(x, u):
-#     def f_scan(carry, u):
-#         # Run the step with both the current state (carry) and the input (u), and get the cost
-#         new_carry, step_cost = step2(carry, u)
-#         running_co cost(x,u) 
-#         return new_carry, step_cost
-
-#     # Use scan to iterate over the sequence (u's), starting with initial state x
-#     _, step_costs = jax.lax.scan(f_scan, init=x, xs=u)  # Each u corresponds to a time step
-    
-#     # Aggregate the running cost (sum of costs across all time steps)
-#     total_cost = jnp.sum(step_costs)
-#     print(step_costs)
-#     return total_cost
-
-# print("\n\n\nSecond test, L = x3, x_n = 0.5*x_n-1 + u")
-# grad_x, grad_u = jax.grad(f2, (0, 1))(jnp.array([1.]), jnp.array([10.,10.,10.]))
-# # print("Gradient wrt U = [u0, u1, u2] : ", grad_u)
-# print(f2(jnp.array([1.]), jnp.array([2.,2.,2.])))
