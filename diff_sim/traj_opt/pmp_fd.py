@@ -29,7 +29,7 @@ def make_step_fn(
     mx,
     dx_init,
     set_control_fn: Callable,
-    eps: float = 1e-6
+    eps: float = 1e-4
 ):
     """
     Create a custom_vjp step function that takes a single argument u.
@@ -108,18 +108,18 @@ def make_step_fn(
             dx_perturbed = step_fn(u_perturbed)
             dx_perturbed_filtered = filter_state_data(dx_perturbed)
             dx_perturbed_flat, _ = safe_ravel_pytree(dx_perturbed_filtered)
-            jax.debug.print("Computed dx_perturbed: {dx_perturbed_flat}", dx_perturbed_flat=dx_perturbed_flat)
-            jax.debug.print("Computed dx_next: {dx_next_flat}", dx_next_flat=dx_next_flat)
+            # jax.debug.print("Computed dx_perturbed: {dx_perturbed_flat}", dx_perturbed_flat=dx_perturbed_flat)
+            # jax.debug.print("Computed dx_next: {dx_next_flat}", dx_next_flat=dx_next_flat)
             return (dx_perturbed_flat - dx_next_flat) / eps
 
         # J shape = (num_u_dims, size_of_dx_next)
         J = jax.vmap(fd_plus)(jnp.arange(num_u_dims))
-        jax.debug.print("Computed J: {J}", J=J)
-        jax.debug.print("Computed ct_dx_next_flat: {ct_dx_next_flat}", ct_dx_next_flat=ct_dx_next_flat)
 
         # Now multiply J by the flattened cotangent
         # => dL/du = (∂L/∂dx_next) · (∂dx_next/∂u) = J @ ct_dx_next_flat
         d_u = J @ ct_dx_next_flat
+        jax.debug.print("Computed J: {J}", J=J)
+        jax.debug.print("Computed ct_dx_next_flat: {ct_dx_next_flat}", ct_dx_next_flat=ct_dx_next_flat)
         jax.debug.print("Computed d_u: {du}", du=d_u)
 
         # Reshape back to original shape of u
@@ -168,6 +168,7 @@ def simulate_trajectory(
         return dx_next, (state_t, cost_t)
 
     dx_final, (states, costs) = jax.lax.scan(scan_body, dx0, U)
+    jax.debug.print("qpos diff {qpos_diff}", qpos_diff=dx_final.qpos - dx0.qpos)
     total_cost = jnp.sum(costs) + terminal_cost_fn(dx_final)
     return states, total_cost
 

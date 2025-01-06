@@ -21,7 +21,7 @@ if __name__ == "__main__":
     dx = mjx.make_data(mx)
     dx = jax.tree.map(upscale, dx)
     qpos_init = jnp.array([-.8, 0, -.8])
-    Nsteps, nu = 300, 2
+    Nsteps, nu = 10, 2
     U0 = jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 2
 
     def running_cost(dx):
