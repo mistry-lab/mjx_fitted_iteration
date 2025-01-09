@@ -20,9 +20,9 @@ if __name__ == "__main__":
     mx = mjx.put_model(model)
     dx = mjx.make_data(mx)
     dx = jax.tree.map(upscale, dx)
-    qpos_init = jnp.array([-.8, 0, -.8])
-    Nsteps, nu = 10, 2
-    U0 = jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 2
+    qpos_init = jnp.array([-.7, 0, -.8])
+    Nsteps, nu = 500, 2
+    U0 = 0. * jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 2
 
     def running_cost(dx):
         pos_finger = dx.qpos[2]
@@ -38,13 +38,15 @@ if __name__ == "__main__":
 
     loss_fn = make_loss_fn(mx, qpos_init, set_control, running_cost, terminal_cost)
     optimizer = PMP(loss=loss_fn)
-    optimal_U = optimizer.solve(U0, learning_rate=0.2, max_iter=50)
+    optimal_U = optimizer.solve(U0, learning_rate=0., max_iter=2)
 
     from diff_sim.utils.mj import visualise_traj_generic
     from diff_sim.traj_opt.pmp_fd import simulate_trajectory
     import mujoco
 
     d = mujoco.MjData(model)
-    step_func = make_step_fn(mx, dx, set_control)
-    x, cost = simulate_trajectory(mx, qpos_init, step_func, running_cost, terminal_cost, optimal_U)
+    step_func = make_step_fn(mx, set_control)
+    x, cost = simulate_trajectory(mx, qpos_init, step_func, running_cost, terminal_cost, U0)
+
+
     visualise_traj_generic(jnp.expand_dims(x, axis=0), d, model)
