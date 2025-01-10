@@ -98,22 +98,37 @@ def make_step_fn(
 
         # 2) Get indices for vmap.   
         leaves_with_path = list(jax.tree_util.tree_leaves_with_path(dx_in))
-        target_fields = {'qpos'}
+        
+        # jax.debug.print("leaves with path {}", leaves_with_path)
+        target_fields = {'qpos','qvel','ctrl'}
 
         idx_target_state = [
             idx for idx, (path, _) in enumerate(leaves_with_path)
             if any(getattr(node, 'name', None) in target_fields for node in path)
         ]
 
-        sizes, _ = unzip2((jnp.size(leaf), jnp.shape(leaf)) for _,leaf in leaves_with_path)
+        # jax.debug.print("index_target_state {}", idx_target_state)
+        
+
+        sizes, _ = unzip2((jnp.size(leaf) if jnp.size(leaf) > 0 else 0, jnp.shape(leaf)) for _,leaf in leaves_with_path)
         indices = tuple(np.cumsum(sizes))
+        # L = [(np.arange(leaves_with_path[id_][1].shape[0]) + indices[id_ - 1]).tolist()
+        #         for id_ in idx_target_state ]
 
         inner_idx = jnp.array(
-            np.ravel([
+            np.hstack([
                 (np.arange(leaves_with_path[id_][1].shape[0]) + indices[id_ - 1]).tolist()
                 for id_ in idx_target_state
             ])
         )
+        # inner_idx = jnp.array([2,3,4,5])
+
+        # target_fields2 = {'qpos','qvel', 'ctrl'}
+
+        # idx_target_state2 = [
+        #     idx for idx, (path, _) in enumerate(leaves_with_path)
+        #     if any(getattr(node, 'name', None) in target_fields2 for node in path)
+        # ]
 
         # Sensitivity mask
         # Apply a mask to filter the perturbed elements
@@ -143,9 +158,14 @@ def make_step_fn(
             e = jnp.zeros_like(u_in_flat).at[i].set(eps)
             u_in_eps = (u_in_flat + e).reshape(u_in.shape)
             dx_perturbed = step_fn(dx_in, u_in_eps)
+            # dx_perturbed = step_fn(dx_perturbed, u_in_eps)
             # dx_perturbed_filtered = filter_state_data(dx_perturbed)
             # dx_perturbed_array_filtered, _ = ravel_pytree(dx_perturbed_filtered)
             dx_perturbed_array, _ = ravel_pytree(dx_perturbed)
+            # jax.debug.print("idx : {i}, dx_perturbed_array = {dx}", i=i, dx = dx_perturbed_array[:10] )
+            # jax.debug.print("idx : {i}, dx_out_array = {dx}", i=i, dx = dx_out_array[:10] )
+            # jax.debug.print("u_in : {u_in}", u_in= u_in)
+            # jax.debug.print("u_in_eps : {u_in_eps}", u_in_eps= u_in_eps)
             return sensitivity_mask * (dx_perturbed_array - dx_out_array) / eps 
         
         
@@ -156,18 +176,23 @@ def make_step_fn(
             def compute_if_in_inner_idx(_):
                 # Create a perturbation mask
                 perturbation_array = jnp.zeros_like(dx_array)
-                perturbation_array = dx_array.at[idx].set(eps)
+                perturbation_array = perturbation_array.at[idx].set(eps)
                 dx_array_eps = dx_array + perturbation_array
                 dx_eps = unravel_fn(dx_array_eps)
-                dx_perturbed = step_fn(dx_eps, jnp.zeros_like(u_in))
+                # dx_eps.timestep = 0.001
+                # dx_perturbed = step_fn(dx_eps, jnp.zeros_like(u_in))
+                dx_perturbed = step_fn(dx_eps, u_in)
                 dx_perturbed_array, _ = ravel_pytree(dx_perturbed)
+                # jax.debug.print("idx : {idx}, dx_perturbed_array = {dx}", idx= idx, dx = dx_perturbed_array[:7] )
                 return sensitivity_mask * (dx_perturbed_array - dx_out_array) / eps
 
             def return_zeros(_):
+                # jax.debug.print("ZEROS CONDITIONS: {idx}", idx= idx)
                 return jnp.zeros_like(dx_array)
 
             # Use lax.cond with jnp.any to check if idx is in inner_idx
             is_in_inner_idx = jnp.any(inner_idx == idx)
+            # jax.debug.print("Condition result: {cond}", cond=is_in_inner_idx)
 
             return jax.lax.cond(
                 is_in_inner_idx,  # Condition
@@ -184,6 +209,8 @@ def make_step_fn(
         # Jx_array = jax.vmap(fdx_element)(inner_idx)
         Jx_array = jax.vmap(fdx_element)(jnp.arange(dx_array.shape[0]))
 
+        # jax.debug.print("Time {time} [s] ; Jx_array: {Jx_array}",time=dx_in.time,  Jx_array= Jx_array[2:8,2:8])
+        # jax.debug.breakpoint()
         # Now multiply J by the flattened cotangent
         # => dL/du = (∂L/∂dx_next) · (∂dx_next/∂u) = g @ Ju
 
@@ -217,7 +244,7 @@ def make_step_fn(
         # d_x = unravel_fn(d_x_flat)
         # d_x = jax.tree_unflatten(dx_tree_def,d_x_flat)
 
-        jax.debug.breakpoint()
+        # jax.debug.breakpoint()
 
         # step_fn has exactly one input: u
         return (d_x,d_u)
@@ -252,7 +279,10 @@ def simulate_trajectory(
     # Prepare the initial dx
     dx0 = mjx.make_data(mx)
     dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(qpos_init))
-
+    dx0 = mjx.step(mx,dx0)
+    # dx0 = mjx.step(mx,dx0)
+    # dx0 = mjx.step(mx,dx0)
+    # dx0 = mjx.step(mx,dx0)
     def scan_body(dx, u):
         dx_next = step_fn(dx, u)
         cost_t = running_cost_fn(dx_next)
@@ -262,7 +292,7 @@ def simulate_trajectory(
         return dx_next, (state_t, cost_t)
 
     dx_final, (states, costs) = jax.lax.scan(scan_body, dx0, U)
-    jax.debug.print("qpos diff {qpos_diff}", qpos_diff=dx_final.qpos - dx0.qpos)
+    # jax.debug.print("qpos diff {qpos_diff}", qpos_diff=dx_final.qpos - dx0.qpos)
     total_cost = jnp.sum(costs) + terminal_cost_fn(dx_final)
     return states, total_cost
 
@@ -356,6 +386,9 @@ class PMP:
             cost_val = self.loss(U_new)
             print("\n\n\n ----")
             print(f"Iteration {i}, cost={cost_val}")
+            print(f"Initial U : {U[:10]}")
+            print(f"gradient = {g[:10]}")
+            print(f"New U : {U}")
 
             # Check for convergence or NaNs
             if jnp.linalg.norm(U_new - U) < tol or jnp.isnan(g).any():
