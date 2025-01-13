@@ -28,7 +28,7 @@
     </asset>
 
 <!--   important mjx options  -->
-  <option timestep="0.0075" impratio="10" iterations="200" ls_iterations="4">
+  <option timestep="0.0075" impratio="10" iterations="100" ls_iterations="4">
     <flag eulerdamp="disable"/>
   </option>
 

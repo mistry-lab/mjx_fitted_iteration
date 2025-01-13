@@ -34,13 +34,13 @@ if __name__ == "__main__":
         return dx.replace(ctrl=dx.ctrl.at[:].set(u))
 
     def running_cost(dx):
-        pos_finger = (dx.qpos[2] - jnp.pi * 2)
+        pos_finger = dx.qpos[2]
         u = dx.ctrl
-        return 0.01 * pos_finger ** 2 + 0.01 * jnp.sum(u ** 2)
+        return 0.002 * jnp.sum(u ** 2) + 0.001 * pos_finger ** 2
 
     def terminal_cost(dx):
-        pos_finger = (dx.qpos[2] - jnp.pi * 2)
-        return 1 * pos_finger ** 2
+        pos_finger = dx.qpos[2]
+        return 4 * pos_finger ** 2
 
     class PolicyNet(Network):
         layers: list
