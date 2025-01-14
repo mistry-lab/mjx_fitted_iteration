@@ -4,7 +4,7 @@ jax.config.update("jax_enable_x64", True)
 jax.config.update('jax_default_matmul_precision', 'high')
 import mujoco
 from mujoco import mjx
-from diff_sim.traj_opt.pmp_fd_scatter import PMP, make_loss_fn, make_step_fn
+from diff_sim.traj_opt.pmp_fd_indexes import PMP, make_loss_fn, make_step_fn, prepare_sensitivity
 
 def upscale(x):
     """Convert data to 64-bit precision."""
@@ -36,15 +36,34 @@ if __name__ == "__main__":
     def set_control(dx, u):
         return dx.replace(ctrl=dx.ctrl.at[:].set(u))
 
-    loss_fn = make_loss_fn(mx, qpos_init, set_control, running_cost, terminal_cost)
-    optimizer = PMP(loss=loss_fn)
-    optimal_U = optimizer.solve(U0, learning_rate=0.5, max_iter=50)
+    # 2) Precompute flatten/unflatten + sensitivity info
+    unravel_dx, inner_idx, sensitivity_mask = prepare_sensitivity(
+        dx,
+        target_fields={'qpos','qvel','ctrl'}
+    )
+
+    # 3) Build the loss function with the new step fn
+    loss_fn = make_loss_fn(
+        mx=mx,
+        qpos_init=qpos_init,
+        set_ctrl_fn=set_control,
+        running_cost_fn=running_cost,
+        terminal_cost_fn=terminal_cost,
+        unravel_dx=unravel_dx,
+        inner_idx=inner_idx,
+        sensitivity_mask=sensitivity_mask,
+        eps=1e-6
+    )
+
+    # 4) Optimize
+    pmp = PMP(loss=loss_fn)
+    optimal_U = pmp.solve(U0=jnp.zeros((Nsteps, nu)), learning_rate=0.5, max_iter=50)
 
     from diff_sim.utils.mj import visualise_traj_generic
     from diff_sim.traj_opt.pmp_fd import simulate_trajectory
     import mujoco
 
     d = mujoco.MjData(model)
-    step_func = make_step_fn(mx, set_control)
+    step_func = make_step_fn(mx, set_control, unravel_dx, inner_idx, sensitivity_mask)
     x, cost = simulate_trajectory(mx, qpos_init, step_func, running_cost, terminal_cost, optimal_U)
     visualise_traj_generic(jnp.expand_dims(x, axis=0), d, model)
