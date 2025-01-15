@@ -24,7 +24,7 @@ if __name__ == "__main__":
     mx = mjx.put_model(model)
     dx = mjx.make_data(mx)
     dx = jax.tree.map(upscale, dx)
-    qpos_init = jnp.array([-.8, 0, -.8])
+    qpos_init = jnp.array([1.2, 0, -.8])
     Nsteps, nu = 300, 2
 
     def running_cost(dx):
@@ -69,7 +69,7 @@ if __name__ == "__main__":
     )
     step_fn = make_step_fn(mx, set_control, fd_cache)
     nn = PolicyNet([6, 64, 64, 2], key=jax.random.PRNGKey(0))
-    adam = optax.adamw(4e-3)
+    adam = optax.adamw(1.e-3) #  sensitive to learning rate
     opt_state = adam.init(equinox.filter(nn, equinox.is_array))
 
     optimizer = Policy(loss=loss_fn, grad_loss=grad_loss_fn)

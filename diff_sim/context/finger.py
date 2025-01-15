@@ -17,17 +17,18 @@ def gen_model() -> mujoco.MjModel:
     return mujoco.MjModel.from_xml_path(model_path)
 
 _cfg = Config(
-    lr=5e-3,
+    lr=2.e-3,
     seed=4,
     batch=64,
     samples=1,
     epochs=1000,
-    eval=1,
+    eval=5,
     num_gpu=1,
     dt=0.0075,
-    ntotal=600,
-    nsteps=600,
+    ntotal=300,
+    nsteps=300,
     mx=mjx.put_model(gen_model()),
+    eps = 1.0e-6,
     gen_model=gen_model
 )
 
@@ -46,16 +47,19 @@ class Policy(Network):
         for layer in self.layers[:-1]:
             x = self.act(layer(x))
         x = self.layers[-1](x).squeeze()
-        x = jnp.tanh(x) * 0.5
+        x = jnp.tanh(x) * 1.
         return x
 
 
-def policy(net: Network, mx: mjx.Model, dx: mjx.Data, x: jnp.ndarray) -> tuple[mjx.Data, jnp.ndarray]:
+def policy(net: Network, mx: mjx.Model, dx: mjx.Data, x: jnp.ndarray) -> jnp.ndarray:
     x = state_encoder(mx, dx)
     t = jnp.expand_dims(dx.time, axis=0)
     u = net(x, t)
-    dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
-    return dx, u
+    return u
+
+# should be defined by the user and controler should simply return u
+def set_control(dx: mjx.Data,u: jnp.ndarray) -> mjx.Data:
+    return dx.replace(ctrl=dx.ctrl.at[:].set(u))
 
 def state_encoder(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     return jnp.concatenate([dx.qpos, dx.qvel])
@@ -66,30 +70,40 @@ def state_decoder(x: jnp.ndarray) -> jnp.ndarray:
 def control_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     x = dx.ctrl
     return jnp.dot(
-        x.T, jnp.dot(jnp.diag(jnp.array([1, 1])), x)
+        x.T, jnp.dot(jnp.diag(jnp.array([0., 0.])), x)
     )
+
+# def run_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
+#     pos = state_encoder(mx, dx)[2]
+#     vel = state_encoder(mx, dx)[5]
+#     x = jnp.array([pos, vel])
+#     return jnp.dot(
+#         x.T, jnp.dot(jnp.diag(jnp.array([1, 0])), x)
+#     )
 
 def run_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
-    pos = state_encoder(mx, dx)[2]
-    vel = state_encoder(mx, dx)[5]
-    x = jnp.array([pos, vel])
-    return jnp.dot(
-        x.T, jnp.dot(jnp.diag(jnp.array([1, 0])), x)
-    )
+    pos_finger = dx.qpos[2]
+    u = dx.ctrl
+    return 0.002 * jnp.sum(u ** 2) + 0.002 * pos_finger ** 2
 
-def terminal_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
-    pos = state_encoder(mx, dx)[2]
-    vel = state_encoder(mx, dx)[5]
-    x = jnp.array([pos, vel])
-    return jnp.dot(
-        x.T, jnp.dot(jnp.diag(jnp.array([1, 0])), x)
-    )
+
+# def terminal_cost(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
+#     pos = state_encoder(mx, dx)[2]
+#     vel = state_encoder(mx, dx)[5]
+#     x = jnp.array([pos, vel])
+#     return jnp.dot(
+#         x.T, jnp.dot(jnp.diag(jnp.array([1, 0])), x)
+#     )
+
+def terminal_cost(mx: mjx.Model, dx: mjx.Data)-> jnp.ndarray:
+    pos_finger = dx.qpos[2]
+    return 8. * pos_finger ** 2
 
 def set_data(mx: mjx.Model, dx: mjx.Data, ctx: Context, key: jnp.ndarray) -> mjx.Data:
-    theta1 = jax.random.uniform(key, (1,), minval=1.5, maxval=1.5)
+    theta1 = jax.random.uniform(key, (1,), minval=0.75, maxval=1.1)
     theta2 = jnp.array([0.])
     _, key = jax.random.split(key)
-    theta3 = jax.random.uniform(key, (1,), minval=-.8, maxval=-.8)
+    theta3 = jax.random.uniform(key, (1,), minval=-.85, maxval=-.6)
     qpos = jnp.concatenate([theta1, theta2, theta3])
     qvel = jnp.array([0., 0., 0.])
     dx = dx.replace(qpos=dx.qpos.at[:].set(qpos), qvel=dx.qvel.at[:].set(qvel))
@@ -97,7 +111,7 @@ def set_data(mx: mjx.Model, dx: mjx.Data, ctx: Context, key: jnp.ndarray) -> mjx
 
 def gen_network(n: int) -> Network:
     key = jax.random.PRNGKey(0)
-    return Policy([6, 64, 64, 2], key)
+    return Policy([6, 128, 128, 2], key)
 
 def is_terminal(mx: mjx.Model, dx: mjx.Data) -> jnp.ndarray:
     time_limit = (dx.time/mx.opt.timestep) > (_cfg.ntotal - 1)
@@ -124,6 +138,7 @@ ctx = Context(
         state_encoder=state_encoder,
         gen_network=gen_network,
         controller=policy,
+        set_control=set_control,
         loss_func=loss_fn_policy_det,
         is_terminal=is_terminal,
         state_decoder=state_decoder

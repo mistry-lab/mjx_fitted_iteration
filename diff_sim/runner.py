@@ -17,7 +17,7 @@ from diff_sim.utils.tqdm import trange
 from diff_sim.utils.mj import visualise_policy, visualise_traj
 from diff_sim.utils.generic import save_model
 from diff_sim.utils.mj_data_manager import create_data_manager
-from diff_sim.simulate import controlled_simulate
+from diff_sim.simulate import controlled_simulate, controlled_simulate_fd
 
 
 # stop when you hit NaNs in jax
@@ -26,6 +26,7 @@ if __name__ == '__main__':
     try:
         parser = argparse.ArgumentParser()
         parser.add_argument("--task", help="task name", default="finger")
+        parser.add_argument("--ad", action="store_false", help="Uses automatic differentiation")
         parser.add_argument("--wb_project", help="wandb project name", default="not_named")
         parser.add_argument("--headless", action="store_true", help="Disable visualization")
         parser.add_argument(
@@ -34,6 +35,9 @@ if __name__ == '__main__':
         )
         args = parser.parse_args()
         ctx = ctxs[args.task]
+
+        # Finite difference or automatic differentiation
+        simulate = controlled_simulate_fd if args.ad else controlled_simulate
 
         # Initialize wandb
         wandb.init(anonymous="allow", mode='offline') if args.wb_project is None else (
@@ -80,7 +84,7 @@ if __name__ == '__main__':
                 if e % iter == 0:
                     key, xkey, tkey = jax.random.split(key, num = 3)
                     dx_vis = data_manager.create_data(ctx.cfg.mx, ctx, 2, xkey)
-                    _, _, _, costs, _, _ = eqx.filter_jit(controlled_simulate)(dx_vis, ctx, net, tkey, ctx.cfg.ntotal)
+                    _, _, _, costs, _, _ = eqx.filter_jit(simulate)(dx_vis, ctx, net, tkey, ctx.cfg.ntotal)
                     log_data = {
                         "Loss avg": round(sum_loss/iter, 3),
                         "Traj Cost avg": jnp.mean(jnp.sum(costs, axis=-1)),

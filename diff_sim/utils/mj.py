@@ -4,7 +4,7 @@ import mujoco
 from mujoco import viewer
 import jax
 from diff_sim.context.meta_context import Context
-from diff_sim.simulate import controlled_simulate
+from diff_sim.simulate import controlled_simulate_fd as controlled_simulate
 from diff_sim.nn.base_nn import Network
 import equinox as eqx
 from diff_sim.utils.mj_data_manager import create_data_manager

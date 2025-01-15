@@ -14,31 +14,6 @@ config.update('jax_default_matmul_precision', 'high')
 config.update("jax_enable_x64", True)
   
 # -------------------------------------------------------------
-# Helpers for attribute names
-# -------------------------------------------------------------
-class GetAttrKey:
-    def __init__(self, name):
-        self.name = name
- 
-    def __repr__(self):
-        return f"GetAttrKey(name='{self.name}')"
- 
- 
-def filter_state_data(dx: mjx.Data):
-    """
-    Select a subset of the mjx.Data fields (qpos, qvel, qacc, sensordata, etc.)
-    that you want to include in your derivative.
-    """
-    return (
-        dx.qpos,
-        dx.qvel,
-        dx.qacc,
-        dx.sensordata,
-        dx.mocap_pos,
-        dx.mocap_quat
-    ) 
- 
-# -------------------------------------------------------------
 # Finite-difference cache
 # -------------------------------------------------------------
 @dataclass(frozen=True)

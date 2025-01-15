@@ -4,6 +4,7 @@ jax.config.update('jax_enable_x64', True)
 
 # System :
 #   x_next = 0.5 * x + 1. * u
+#   x_next = 0.5 * (0.5 * x_n-1 + 1. * u_n-1) + 1. * u
 # 3 steps : 
 #   U = [u_0, u_1, u_2]
 #   x_3 = 0.5*x_2 + u_2
@@ -35,6 +36,7 @@ def step_bwd(residual, g):
     df_du = 1.  # Derivative w.r.t. u
     grad_x = g * df_dx
     grad_u = g * df_du
+    # jax.debug.print("\n\n Cotangent g : {}", g)
     return grad_x, grad_u
 
 # Corrected version:
@@ -47,6 +49,8 @@ def step_bwd_fd(residual, g):
     df_du = (u_eps - result) / eps
     grad_x = g * df_dx
     grad_u = g * df_du
+    jax.debug.print("\n\n x : {}", x)
+    jax.debug.print("\n\n Cotangent g : {}", g)
     return grad_x, grad_u
 
 def f(xs):

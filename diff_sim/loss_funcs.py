@@ -8,7 +8,7 @@ from jaxtyping import PyTree
 from mujoco.mjx import Data
 
 from diff_sim.context.meta_context import Context
-from diff_sim.simulate import controlled_simulate
+from diff_sim.simulate import controlled_simulate_fd as controlled_simulate
 
 def loss_fn_policy_det(params: PyTree, static: PyTree, dxs:mjx.Data, ctx: Context, user_key: jnp.ndarray) -> tuple[
     jnp.ndarray, tuple[jnp.ndarray, mjx.Data, jnp.ndarray, jnp.ndarray]]:
