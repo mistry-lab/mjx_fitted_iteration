@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import mujoco
 from mujoco import mjx
 import equinox
-from diff_sim.traj_opt.policy import Policy, make_loss, make_step_fn
+from diff_sim.traj_opt.policy import Policy, make_loss, make_step_fn, build_fd_cache
 from diff_sim.nn.base_nn import Network
 import optax
 
@@ -59,7 +59,15 @@ if __name__ == "__main__":
 
     loss_fn = make_loss(mx, qpos_init, set_control, running_cost, terminal_cost, length=Nsteps)
     grad_loss_fn = equinox.filter_jit(jax.jacrev(loss_fn))
-    step_fn = make_step_fn(mx, set_control)
+    
+    # Build the FD cache once
+    fd_cache = build_fd_cache(
+        dx,
+        jnp.zeros((mx.nu,)),
+        target_fields={'qpos', 'qvel', 'ctrl'},  # or whichever fields you need
+        eps=1e-6
+    )
+    step_fn = make_step_fn(mx, set_control, fd_cache)
     nn = PolicyNet([6, 64, 64, 2], key=jax.random.PRNGKey(0))
     adam = optax.adamw(4e-3)
     opt_state = adam.init(equinox.filter(nn, equinox.is_array))
