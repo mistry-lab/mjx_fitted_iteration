@@ -1,14 +1,12 @@
 import jax
-jax.config.update("jax_enable_x64", True)
-jax.config.update('jax_default_matmul_precision', 'high')
 import jax.numpy as jnp
 import mujoco
 from mujoco import mjx
 import equinox
 import optax
-
-# Assume these imports point to the optimized versions above
-from diff_sim.traj_opt.policy import Policy, make_loss, make_step_fn, build_fd_cache
+from diff_sim.traj_opt.policy import (
+    simulate_trajectories, make_loss_multi_init, make_step_fn, build_fd_cache
+)
 from diff_sim.nn.base_nn import Network
 
 def upscale(x):
@@ -21,11 +19,26 @@ def upscale(x):
     return x
 
 if __name__ == "__main__":
+    jax.config.update("jax_enable_x64", True)
+    jax.config.update('jax_default_matmul_precision', 'high')
+
+    # Load MuJoCo model
     model = mujoco.MjModel.from_xml_path("../../xmls/finger_mjx.xml")
     mx = mjx.put_model(model)
-    dx = mjx.make_data(mx)
-    dx = jax.tree_map(upscale, dx)
-    qpos_init = jnp.array([-0.8, 0, -.8])
+    dx_template = mjx.make_data(mx)
+    dx_template = jax.tree_map(upscale, dx_template)
+
+    # Suppose we define a batch of initial conditions
+    # e.g. 5 different qpos, qvel
+    qpos_inits = jnp.array([
+        [-0.8,  0.0, -0.8],
+        [ 0.1, -0.1,  0.2],
+        [ 1.0,  0.5, -0.2],
+        [-1.2,  0.4,  0.5],
+        [ 0.5, -0.3, -1.0],
+    ])
+    qvel_inits = jnp.zeros_like(qpos_inits)  # or any distribution you like
+
     Nsteps, nu = 300, 2
 
     def running_cost(dx):
@@ -58,31 +71,44 @@ if __name__ == "__main__":
             x = jnp.tanh(x) * 1
             return x
 
-    # Make the loss and gradient
-    loss_fn = make_loss(mx, qpos_init, set_control, running_cost, terminal_cost, length=Nsteps)
-    grad_loss_fn = equinox.filter_jit(jax.jacrev(loss_fn))
-
-    # Build the FD cache (usually not needed if you let make_loss handle it, but shown for clarity)
-    fd_cache = build_fd_cache(
-        dx, jnp.zeros((mx.nu,)),
-        target_fields={'qpos', 'qvel', 'ctrl'},
-        eps=1e-6
+    # Create the new multi-initial-condition loss function
+    loss_fn = make_loss_multi_init(
+        mx,
+        qpos_inits,     # shape (B, n_qpos)
+        qvel_inits,     # shape (B, n_qpos) or (B, n_qvel)
+        set_control_fn=set_control,
+        running_cost_fn=running_cost,
+        terminal_cost_fn=terminal_cost,
+        length=Nsteps,
+        reduce_cost="mean",
     )
-    step_fn = make_step_fn(mx, set_control, fd_cache)
 
+    # JIT the gradient
+
+    # Create your FD cache (if you want it explicitly) or rely on the above
+    # fd_cache = build_fd_cache(dx_template, jnp.zeros((mx.nu,)), ...)
+
+    # Create your policy net, optimizer, and do gradient descent
     nn = PolicyNet([6, 64, 64, 2], key=jax.random.PRNGKey(0))
-
     adam = optax.adamw(1e-3)
     opt_state = adam.init(equinox.filter(nn, equinox.is_array))
 
-    optimizer = Policy(loss=loss_fn, grad_loss=grad_loss_fn)
+    # Same "Policy" class as before
+    from diff_sim.traj_opt.policy import Policy
+    optimizer = Policy(loss=loss_fn)
     optimal_nn = optimizer.solve(nn, adam, opt_state, max_iter=13)
 
-    # Then you can visualize or evaluate the final trajectory:
-    from diff_sim.utils.mj import visualise_traj_generic
-    from diff_sim.traj_opt.policy import simulate_trajectory
-
+    fd_cache = build_fd_cache(dx_template)
+    step_fn = make_step_fn(mx, set_control, fd_cache)
+    # Evaluate final performance *on the entire batch*
     params, static = equinox.partition(optimal_nn, equinox.is_array)
-    d = mujoco.MjData(model)
-    x, cost = simulate_trajectory(mx, qpos_init, running_cost, terminal_cost, step_fn, params, static, Nsteps)
-    visualise_traj_generic(jnp.expand_dims(x, axis=0), d, model)
+    states_batched, cost_batched = simulate_trajectories(
+        mx, qpos_inits, qvel_inits,
+        running_cost, terminal_cost,
+        step_fn=step_fn,  # Not needed if you want to create it from FD cache
+        params=params,
+        static=static,
+        length=Nsteps,
+        reduce_cost="mean",
+    )
+    print("Final average cost across the batch:", cost_batched)

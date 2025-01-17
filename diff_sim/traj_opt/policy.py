@@ -9,6 +9,7 @@ import equinox
 from jax.flatten_util import ravel_pytree
 import numpy as np
 from jax._src.util import unzip2
+import time
 
 config.update('jax_default_matmul_precision', 'high')
 config.update("jax_enable_x64", True)
@@ -30,7 +31,6 @@ class FDCache:
 
 def build_fd_cache(
         dx_ref: mjx.Data,
-        u_ref: jnp.ndarray,
         target_fields: Optional[Set[str]] = None,
         eps: float = 1e-6
 ) -> FDCache:
@@ -46,10 +46,7 @@ def build_fd_cache(
     # Flatten dx
     dx_array, unravel_dx = ravel_pytree(dx_ref)
     dx_size = dx_array.shape[0]
-
-    # Flatten control
-    u_ref_flat = u_ref.ravel()
-    num_u_dims = u_ref_flat.shape[0]
+    num_u_dims = dx_ref.ctrl.shape[0]
 
     # Gather leaves for qpos, qvel, ctrl
     leaves_with_path = list(jax.tree_util.tree_leaves_with_path(dx_ref))
@@ -195,28 +192,13 @@ def make_step_fn(
             return base.at[subset_indices].set(subset_rows)
 
         dx_dim = dx_array.size
-        # Solution 1 : Full size multiplication (dx_dim, dx_dim) @ (dx_dim,)
-        # Jx_array = scatter_rows(Jx_rows, inner_idx, (dx_dim, dx_dim))
-        # d_x_flat = Jx_array @ g_array  # shape = (dx_dim,)
 
         # Solution 2 : Reduced size multiplication (inner_idx, inner_idx) @ (inner_idx,)
         d_x_flat_sub = Jx_rows[:, inner_idx] @ g_array[inner_idx]
         d_x_flat = scatter_rows(d_x_flat_sub, inner_idx, (dx_dim,))
 
-        # Solution 3 : Partial size multiplication (inner_idx, dx_dim) @ (dx_dim,)
-        # partials = jnp.einsum("ij,j->i", Jx_rows, g_array)  # shape (len(inner_idx),)
-        # d_x_flat = jnp.zeros_like(dx_array).at[inner_idx].set(partials)
-
-        # Similarly for control
-        # Solution 1 : full-size multiplication (num_u_dims, dx_dim) @ (dx_dim,)
-        # d_u_flat = Ju_array @ g_array
-        # d_u = d_u_flat.reshape(u_in.shape)
-
-        # Solution 2 : partial-size multiplication (num_u_dims, inner_idx) @ (inner_idx,)
         d_u = Ju_array[:, inner_idx] @ g_array[inner_idx]
-
         d_x = unravel_dx(d_x_flat)
-        # jax.debug.breakpoint()
         return (d_x, d_u)
 
     step_fn.defvjp(step_fn_fwd, step_fn_bwd)
@@ -227,61 +209,106 @@ def make_step_fn(
 # Simulate a trajectory
 # -------------------------------------------------------------
 @equinox.filter_jit
-def simulate_trajectory(mx, qpos_init, running_cost_fn, terminal_cost_fn, step_fn, params, static, length):
+def simulate_trajectories(
+        mx,
+        qpos_inits,  # shape (B, nq) for example
+        qvel_inits,  # shape (B, nqvel)
+        running_cost_fn,
+        terminal_cost_fn,
+        step_fn,
+        params,
+        static,
+        length,
+        reduce_cost: str = "mean",
+):
     """
-    Simulate a trajectory with a policy = model(x, t).
+    Simulate a *batch* of trajectories (B of them) with a single policy.
+
+    Args:
+      mx: MuJoCo model container.
+      qpos_inits: shape (B, n_qpos)
+      qvel_inits: shape (B, n_qvel)
+      running_cost_fn, terminal_cost_fn: same cost structure as before.
+      step_fn: the custom FD-based step function returned by make_step_fn.
+      params, static: your policy parameters & static parts (from equinox.partition).
+      length: number of steps per trajectory.
+      reduce_cost: either "mean" or "sum" (decide how to combine the batch costs).
+    Returns:
+      - states_batched: shape (B, length, 2 * n_qpos) (if that’s your total state dimension)
+      - total_cost: a scalar cost (mean or sum across the batch).
     """
+    # Combine the param & static into the actual model (same as simulate_trajectory).
     model = equinox.combine(params, static)
 
-    def scan_step_fn(dx, _):
-        x = jnp.concatenate([dx.qpos, dx.qvel])
-        u = model(x, dx.time)
-        dx = step_fn(dx, u)
-        c = running_cost_fn(dx)
-        state = jnp.concatenate([dx.qpos, dx.qvel])
-        return dx, (state, c)
+    def single_trajectory(qpos_init, qvel_init):
+        """Simulate one trajectory given a single (qpos_init, qvel_init)."""
+        # Build the initial MuJoCo data
+        dx0 = mjx.make_data(mx)
+        dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(qpos_init))
+        dx0 = dx0.replace(qvel=dx0.qvel.at[:].set(qvel_init))
 
-    dx0 = mjx.make_data(mx)
-    dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(qpos_init))
-    dx_final, (states, costs) = jax.lax.scan(scan_step_fn, dx0, length=length)
-    total_cost = jnp.sum(costs) + terminal_cost_fn(dx_final)
-    return states, total_cost
+        # Define the scanning function for a single rollout
+        def scan_step_fn(dx, _):
+            x = jnp.concatenate([dx.qpos, dx.qvel])
+            u = model(x, dx.time)  # policy output
+            dx = step_fn(dx, u)  # FD-based MuJoCo step
+            c = running_cost_fn(dx)
+            state = jnp.concatenate([dx.qpos, dx.qvel])
+            return dx, (state, c)
+
+        dx_final, (states, costs) = jax.lax.scan(scan_step_fn, dx0, length=length)
+        total_cost = jnp.sum(costs) + terminal_cost_fn(dx_final)
+        return states, total_cost
+
+    # vmap across the batch dimension
+    states_batched, costs_batched = jax.vmap(single_trajectory)(qpos_inits, qvel_inits)
+
+    total_cost = jnp.mean(costs_batched)
+
+    return states_batched, total_cost
 
 
 # -------------------------------------------------------------
 # Build the loss
 # -------------------------------------------------------------
-def make_loss(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost_fn, length):
+def make_loss_multi_init(
+    mx,
+    qpos_inits,         # shape (B, n_qpos)
+    qvel_inits,         # shape (B, n_qvel)
+    set_control_fn,
+    running_cost_fn,
+    terminal_cost_fn,
+    length,
+    reduce_cost: str = "mean",
+):
     """
-    Create a loss function that takes 'params' (your policy parameters) + 'static' and
-    returns total trajectory cost. We build the FDCache once here.
+    Create a loss function for *multiple initial conditions*.
+    The returned function takes 'params' and 'static',
+    and returns cost aggregated across all initial conditions.
     """
 
-    # Build a reference data for FD shape
     dx_ref = mjx.make_data(mx)
-    # Build a reference control for FD shape
-    u_ref = jnp.zeros((mx.nu,))
 
-    # Build the FD cache once
+    # Build an FD cache once, as usual
     fd_cache = build_fd_cache(
         dx_ref,
-        u_ref,
-        target_fields={'qpos', 'qvel', 'ctrl'},
+        target_fields={"qpos", "qvel", "ctrl"},
         eps=1e-6
     )
 
-    # Create the step function with FD-based custom VJP
+    # FD-based custom VJP
     step_fn = make_step_fn(mx, set_control_fn, fd_cache)
 
-    def loss(params, static):
-        _, total_cost = simulate_trajectory(
-            mx, qpos_init,
+    def multi_init_loss(params, static):
+        _, total_cost = simulate_trajectories(
+            mx, qpos_inits, qvel_inits,
             running_cost_fn, terminal_cost_fn, step_fn,
-            params, static, length
+            params, static, length,
+            reduce_cost=reduce_cost,
         )
         return total_cost
 
-    return loss
+    return multi_init_loss
 
 
 # -------------------------------------------------------------
@@ -290,20 +317,23 @@ def make_loss(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost_fn, 
 @dataclass
 class Policy:
     loss: Callable[[PyTree, PyTree], float]
-    grad_loss: Callable[[PyTree, PyTree], jnp.ndarray]
 
     def solve(self, model: equinox.Module, optim, state, max_iter=100):
         """
         Generic gradient descent loop on your policy parameters.
         """
+
+        grad_loss = equinox.filter_jit(jax.jacrev(self.loss))
         opt_model = None
         for i in range(max_iter):
+            now = time.time()
             params, static = equinox.partition(model, equinox.is_array)
-            g = self.grad_loss(params, static)
+            g = grad_loss(params, static)
             f_val = self.loss(params, static)
             updates, state = optim.update(g, state, model)
             model = equinox.apply_updates(model, updates)
             opt_model = model
-            print(f"Iteration {i}: cost={f_val}")
+            print(f"Iteration {i}: cost={f_val}, time={time.time() - now}")
+            # print(f"Iteration {i}: cost={f_val}")
         return model
 
