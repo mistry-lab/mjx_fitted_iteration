@@ -20,15 +20,16 @@ def visualise_policy(
     dxs = data_manager.create_data(ctx.cfg.mx, ctx, 3, xkey)
     dxs, x, _, _, _, term_mask = eqx.filter_jit(controlled_simulate)(dxs, ctx, net, tkey, ctx.cfg.ntotal)
     x = jax.vmap(jax.vmap(ctx.cbs.state_decoder))(x)
-    x = np.array(x)[0].reshape(1, ctx.cfg.ntotal, -1)
+    x = np.array(x)[:3].reshape(1, ctx.cfg.ntotal, -1)
     for b in range(x.shape[0]):
         for i in range(x.shape[1]):
             step_start = time.time()
             qpos = x[b, i, :m.nq]
-            qvel = x[b, i, m.nq:]
+            qvel = x[b, i, -m.nv:]
             d.qpos[:] = qpos
             d.qvel[:] = qvel
             d.mocap_pos = np.array(dxs.mocap_pos[b])
+            d.mocap_quat = np.array(dxs.mocap_quat[b])
             mujoco.mj_forward(m, d)
             viewer.sync()
             time_until_next_step = m.opt.timestep - (time.time() - step_start)

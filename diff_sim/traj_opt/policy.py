@@ -101,7 +101,7 @@ def make_step_fn(
     We do finite differences (FD) in the backward pass using the info in fd_cache.
     """
 
-    # @jax.custom_vjp
+    @jax.custom_vjp
     def step_fn(dx: mjx.Data, u: jnp.ndarray):
         """
         Forward pass:
@@ -201,7 +201,7 @@ def make_step_fn(
         d_x = unravel_dx(d_x_flat)
         return (d_x, d_u)
 
-    # step_fn.defvjp(step_fn_fwd, step_fn_bwd)
+    step_fn.defvjp(step_fn_fwd, step_fn_bwd)
     return step_fn
 
 
@@ -219,7 +219,7 @@ def simulate_trajectories(
         params,
         static,
         length,
-        reduce_cost: str = "mean",
+        keys
 ):
     """
     Simulate a *batch* of trajectories (B of them) with a single policy.
@@ -232,7 +232,6 @@ def simulate_trajectories(
       step_fn: the custom FD-based step function returned by make_step_fn.
       params, static: your policy parameters & static parts (from equinox.partition).
       length: number of steps per trajectory.
-      reduce_cost: either "mean" or "sum" (decide how to combine the batch costs).
     Returns:
       - states_batched: shape (B, length, 2 * n_qpos) (if that’s your total state dimension)
       - total_cost: a scalar cost (mean or sum across the batch).
@@ -240,7 +239,7 @@ def simulate_trajectories(
     # Combine the param & static into the actual model (same as simulate_trajectory).
     model = equinox.combine(params, static)
 
-    def single_trajectory(qpos_init, qvel_init):
+    def single_trajectory(qpos_init, qvel_init, key):
         """Simulate one trajectory given a single (qpos_init, qvel_init)."""
         # Build the initial MuJoCo data
         dx0 = mjx.make_data(mx)
@@ -248,20 +247,29 @@ def simulate_trajectories(
         dx0 = dx0.replace(qvel=dx0.qvel.at[:].set(qvel_init))
 
         # Define the scanning function for a single rollout
-        def scan_step_fn(dx, _):
+        def scan_step_fn(carry, _):
+            dx, key = carry
+            key, subkey = jax.random.split(key)
+
             x = jnp.concatenate([dx.qpos, dx.qvel])
-            u = model(x, dx.time)  # policy output
+            
+            # Add noise to the control  
+            noise = 0.2 * jax.random.normal(subkey, mx.nu)
+            # jax.debug.print("noise : {}", noise)
+            u = model(x, dx.time) + noise # policy output
+
             dx = step_fn(dx, u)  # FD-based MuJoCo step
             c = running_cost_fn(dx)
             state = jnp.concatenate([dx.qpos, dx.qvel])
-            return dx, (state, c)
+            return (dx,key), (state, c)
 
-        dx_final, (states, costs) = jax.lax.scan(scan_step_fn, dx0, length=length)
+        key, subkey = jax.random.split(key)
+        (dx_final, _), (states, costs) = jax.lax.scan(scan_step_fn, (dx0,subkey), length=length)
         total_cost = jnp.sum(costs) + terminal_cost_fn(dx_final)
         return states, total_cost
 
     # vmap across the batch dimension
-    states_batched, costs_batched = jax.vmap(single_trajectory)(qpos_inits, qvel_inits)
+    states_batched, costs_batched = jax.vmap(single_trajectory)(qpos_inits, qvel_inits, keys)
 
     total_cost = jnp.mean(costs_batched)
 
@@ -278,8 +286,7 @@ def make_loss_multi_init(
     set_control_fn,
     running_cost_fn,
     terminal_cost_fn,
-    length,
-    reduce_cost: str = "mean",
+    length
 ):
     """
     Create a loss function for *multiple initial conditions*.
@@ -299,12 +306,11 @@ def make_loss_multi_init(
     # FD-based custom VJP
     step_fn = make_step_fn(mx, set_control_fn, fd_cache)
 
-    def multi_init_loss(params, static):
+    def multi_init_loss(params, static, keys):
         _, total_cost = simulate_trajectories(
             mx, qpos_inits, qvel_inits,
             running_cost_fn, terminal_cost_fn, step_fn,
-            params, static, length,
-            reduce_cost=reduce_cost,
+            params, static, length,keys
         )
         return total_cost
 
@@ -318,18 +324,22 @@ def make_loss_multi_init(
 class Policy:
     loss: Callable[[PyTree, PyTree], float]
 
-    def solve(self, model: equinox.Module, optim, state, max_iter=100):
+    def solve(self, model: equinox.Module, optim, state, batch_size, max_iter=100):
         """
         Generic gradient descent loop on your policy parameters.
         """
 
         grad_loss = equinox.filter_jit(jax.jacrev(self.loss))
         opt_model = None
+        key = jax.random.PRNGKey(10) 
         for i in range(max_iter):
             now = time.time()
             params, static = equinox.partition(model, equinox.is_array)
-            g = grad_loss(params, static)
-            f_val = self.loss(params, static)
+            # Keys for random noise
+            key, subkey = jax.random.split(key, num=(2,)) 
+            key_batch = jax.random.split(subkey, num=(batch_size,))
+            g = grad_loss(params, static,key_batch)
+            f_val = self.loss(params, static,key_batch)
             updates, state = optim.update(g, state, model)
             model = equinox.apply_updates(model, updates)
             opt_model = model

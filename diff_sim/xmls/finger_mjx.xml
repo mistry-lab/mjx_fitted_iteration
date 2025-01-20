@@ -28,7 +28,7 @@
     </asset>
 
 <!--   important mjx options  -->
-  <option timestep="0.0075" impratio="10" iterations="100" ls_iterations="50">
+  <option timestep="0.0075" impratio="10" iterations="100" ls_iterations="4">
     <flag eulerdamp="disable"/>
   </option>
 
@@ -38,7 +38,7 @@
     <numeric data="15" name="max_geom_pairs"/>
   </custom>
 
-    <default>`
+    <default>
         <geom solimp="0 0.99 0.1" solref="0.02 1"/>
         <joint type="hinge" axis="0 -1 0"/>
         <motor ctrllimited="true" ctrlrange="-1 1"/>
@@ -46,7 +46,7 @@
             <site type="ellipsoid" size=".025 .03 .025" rgba=".5 .5 .5 .3" group="3"/>
         </default>
     </default>
-
+ 
     <worldbody>
         <light name="light" directional="true" diffuse=".6 .6 .6" pos="0 0 2" specular=".3 .3 .3"/>
         <geom name="ground" type="plane" pos="0 0 -0.6" size=".6 .2 10" material="grid"/>
@@ -69,6 +69,12 @@
             <geom name="cap1" type="capsule" size=".04 .09" material="self" pos=".02 0 0" />
             <geom name="cap2" type="capsule" size=".04 .09" material="self" pos="-.02 0 0"/>
             <geom name="spinner_decoration" type="cylinder" fromto="0 -.045 0 0 .045 0" size=".02" material="decoration"/>
+            <geom name="target" pos="0. 0. 0.12" type="sphere" size="0.02" rgba=".3 .5 .7 0.25" contype="0" conaffinity="0"/>
+        </body>
+
+        <body mocap="true" name="target" pos="-.2 0 -.4" quat="0. 0.707107 0. 0.707107">
+            <!-- A joint for tracking angular displacement -->
+            <geom name="target_decoration" pos="0. 0. 0.12" type="sphere" size="0.02" rgba="0.961 0.294 0.145 0.25" contype="0" conaffinity="0"/>
         </body>
 
     </worldbody>

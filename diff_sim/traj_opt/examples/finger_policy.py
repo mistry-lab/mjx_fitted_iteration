@@ -79,7 +79,8 @@ if __name__ == "__main__":
     # qpos_inits = jnp.repeat(qpos_inits, 64, axis=0)
     # qpos_inits += 0.01 * jax.random.normal(jax.random.PRNGKey(0), qpos_inits.shape)
     init_key = jax.random.PRNGKey(10) 
-    keys = jax.random.split(init_key, 2)  # Generate 100 random keys
+    n_batch = 200
+    keys = jax.random.split(init_key, n_batch)  # Generate 100 random keys
     qpos_inits = jax.vmap(generate_inital_conditions, in_axes=(0))(keys)
     qvel_inits = jnp.zeros_like(qpos_inits)  # or any distribution you like
 
@@ -123,8 +124,7 @@ if __name__ == "__main__":
         set_control_fn=set_control,
         running_cost_fn=running_cost,
         terminal_cost_fn=terminal_cost,
-        length=Nsteps,
-        reduce_cost="mean",
+        length=Nsteps
     )
 
     # JIT the gradient
@@ -133,19 +133,21 @@ if __name__ == "__main__":
     # fd_cache = build_fd_cache(dx_template, jnp.zeros((mx.nu,)), ...)
 
     # Create your policy net, optimizer, and do gradient descent
-    nn = PolicyNet([6, 64, 64, 2], key=jax.random.PRNGKey(0))
-    adam = optax.adamw(8.e-4)
+    nn = PolicyNet([6, 128,256, 128, 2], key=jax.random.PRNGKey(0))
+    adam = optax.adamw(1.5e-3)
     opt_state = adam.init(equinox.filter(nn, equinox.is_array))
 
     # Same "Policy" class as before
     from diff_sim.traj_opt.policy import Policy
     optimizer = Policy(loss=loss_fn)
-    optimal_nn = optimizer.solve(nn, adam, opt_state, max_iter=200)
+    optimal_nn = optimizer.solve(nn, adam, opt_state, batch_size=n_batch, max_iter=100)
 
     fd_cache = build_fd_cache(dx_template)
     step_fn = make_step_fn(mx, set_control, fd_cache)
     # Evaluate final performance *on the entire batch*
     params, static = equinox.partition(optimal_nn, equinox.is_array)
+    _, subkey = jax.random.split(init_key, num=(2,)) 
+    key_batch = jax.random.split(subkey, num=(n_batch,))
     states_batched, cost_batched = simulate_trajectories(
         mx, qpos_inits, qvel_inits,
         running_cost, terminal_cost,
@@ -153,7 +155,7 @@ if __name__ == "__main__":
         params=params,
         static=static,
         length=Nsteps,
-        reduce_cost="mean",
+        keys=key_batch
     )
 
     # visualize the trajectories

@@ -13,5 +13,8 @@ def interactive_viewer(xml_path: str):
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--xml", help="xml file to render", default="diff_sim/xmls/snake_mass.xml")
+    parser.add_argument("--xml", help="xml file to render", default="diff_sim/xmls/finger_mjx.xml")
     interactive_viewer(parser.parse_args().xml)
+
+    model = mujoco.MjModel.from_xml_path(parser.parse_args().xml)
+    data = mujoco.MjData(model)
