@@ -69,7 +69,6 @@ class Network(eqx.Module, ABC):
         Returns:
             Tuple[BasePolicy, state, float]: Updated model, updated state, and loss value.
         """
-        import jax
         params, static = eqx.partition(model, eqx.is_array)
         (loss_value, res), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(
             params, static, dxs, ctx, user_key

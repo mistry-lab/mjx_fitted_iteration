@@ -19,7 +19,7 @@ def gen_model() -> mujoco.MjModel:
 _cfg = Config(
     lr=2.e-3,
     seed=4,
-    batch=64,
+    batch=4,
     samples=1,
     epochs=1000,
     eval=5,

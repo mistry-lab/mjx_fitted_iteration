@@ -101,7 +101,7 @@ def make_step_fn(
     We do finite differences (FD) in the backward pass using the info in fd_cache.
     """
 
-    @jax.custom_vjp
+    # @jax.custom_vjp
     def step_fn(dx: mjx.Data, u: jnp.ndarray):
         """
         Forward pass:
@@ -201,7 +201,7 @@ def make_step_fn(
         d_x = unravel_dx(d_x_flat)
         return (d_x, d_u)
 
-    step_fn.defvjp(step_fn_fwd, step_fn_bwd)
+    # step_fn.defvjp(step_fn_fwd, step_fn_bwd)
     return step_fn
 
 

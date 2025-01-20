@@ -1,68 +1,45 @@
 import jax
 import jax.numpy as jnp
 jax.config.update("jax_enable_x64", True)
-jax.config.update('jax_default_matmul_precision', 'high')
+jax.config.update("jax_default_matmul_precision", "high")
+
 import mujoco
 from mujoco import mjx
 
-# Import the FD-based iLQR code from above (or place it inline)
-from diff_sim.traj_opt.ilqr_fd import (
-    ILQR,
-    make_ilqr_step_fd,
-    simulate_trajectory_ilqr_fd
-)
+from diff_sim.traj_opt.ilqr_fd import ILQR  # or wherever you place the code above
 
 def upscale(x):
-    """Convert data to 64-bit precision."""
     if hasattr(x, 'dtype'):
         if x.dtype == jnp.int32:
-            return jnp.int64(x)
+            return x.astype(jnp.int64)
         elif x.dtype == jnp.float32:
-            return jnp.float64(x)
+            return x.astype(jnp.float64)
     return x
 
 if __name__ == "__main__":
-
-    import mujoco
-    from mujoco import mjx
-
-    # Load model
+    # 1) Load MuJoCo model
     model = mujoco.MjModel.from_xml_path("../../xmls/finger_mjx.xml")
     mx = mjx.put_model(model)
-
-    # Create one-time data template
     dx_template = mjx.make_data(mx)
-    # Possibly promote to double precision
-    dx_template = jax.tree_map(lambda x: x.astype(jnp.float64) if hasattr(x, 'dtype') else x, dx_template)
+    dx_template = jax.tree_map(upscale, dx_template)
 
-    # Define initial qpos, horizon, control dimension
-    qpos_init = jnp.array([-0.5, 0.0, -1])
-    Nsteps, nu = 300, 2
-    U0 = 0.2 * jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 2
-
-
-    # Same user-defined cost
-    def running_cost_fn(dx):
+    # 2) Define cost & control setter
+    def running_cost_fn(dx: mjx.Data) -> float:
         pos_finger = dx.qpos[2]
         ctrl = dx.ctrl
-        return 0.002 * jnp.sum(ctrl ** 2) + 0.001 * (pos_finger ** 2)
+        return 0.002 * jnp.sum(ctrl**2) + 0.001 * (pos_finger**2)
 
-
-    def terminal_cost_fn(dx):
+    def terminal_cost_fn(dx: mjx.Data) -> float:
         pos_finger = dx.qpos[2]
-        return 4.0 * (pos_finger ** 2)
+        return 4.0 * (pos_finger**2)
 
-
-    # Same user-defined control setter
-    def set_control_fn(dx, u):
+    def set_control_fn(dx: mjx.Data, u: jnp.ndarray) -> mjx.Data:
         return dx.replace(ctrl=dx.ctrl.at[:].set(u))
 
-
-    # Create the iLQR-step function
-    ilqr_step = make_ilqr_step_fd(
+    # 3) Build ILQR
+    solver = ILQR(
         dx_template=dx_template,
         mx=mx,
-        qpos_init=qpos_init,
         set_control_fn=set_control_fn,
         running_cost_fn=running_cost_fn,
         terminal_cost_fn=terminal_cost_fn,
@@ -70,16 +47,40 @@ if __name__ == "__main__":
         reg=1e-6
     )
 
-    # Build the solver
-    solver = ILQR(ilqr_step=ilqr_step)
+    # 4) Single example
+    nq, nv = mx.nq, mx.nv
+    Nsteps, nu = 300, 2
 
-    # Solve
-    U_opt, final_cost = solver.solve(U0, tol=1e-5, max_iter=50)
-    print("Optimal cost:", final_cost)
+    qpos_init_single = jnp.array([-0.5, 0.0, -1.0])
+    qvel_init_single = jnp.zeros_like(qpos_init_single)
+    U0_single = 0.1 * jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu))
 
-    from diff_sim.utils.mj import visualise_traj_generic
-    import mujoco
+    U_opt_single, cost_single = solver.solve(
+        qpos_init_single,
+        qvel_init_single,
+        U0_single,
+        tol=1e-5,
+        max_iter=50
+    )
+    print("Single final cost:", cost_single)
 
-    d = mujoco.MjData(model)
-    x, cost = simulate_trajectory_ilqr_fd(dx_template, mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost_fn, U_opt)
-    visualise_traj_generic(jnp.expand_dims(x, axis=0), d, model)
+    # 5) Batch example of size B=3
+    qpos_init_batch = jnp.array([
+        [-0.5,  0.0, -1.0],
+        [-0.8,  0.2, -0.2],
+        [ 0.2, -0.1,  0.6]
+    ])
+    qvel_init_batch = jnp.zeros_like(qpos_init_batch)  # shape (3,3)
+    U0_batch = 0.1 * jax.random.normal(jax.random.PRNGKey(1), (3, Nsteps, nu))
+
+    U_opt_batch, cost_batch = solver.solve(
+        qpos_init_batch,
+        qvel_init_batch,
+        U0_batch,
+        tol=1e-5,
+        max_iter=50
+    )
+    print("Batch final cost:", cost_batch)  # shape (3,)
+
+    # Each iteration in the batch loop prints:
+    # [Batch] Iteration i, mean cost=0.1234
