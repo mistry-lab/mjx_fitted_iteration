@@ -259,16 +259,16 @@ def simulate_trajectories(
             dx, key = carry
             key, subkey = jax.random.split(key)
 
-            x = jnp.concatenate([dx.qpos, dx.qvel])
+            x = jnp.concatenate([dx.qpos, dx.qvel, dx.sensordata])
             
             # Add noise to the control  
-            noise = 0.2 * jax.random.normal(subkey, mx.nu)
+            noise = 0.5 * jax.random.normal(subkey, mx.nu)
             # jax.debug.print("noise : {}", noise)
             u = model(x, dx.time) + noise # policy output
 
             dx = step_fn(dx, u)  # FD-based MuJoCo step
             c = running_cost_fn(dx)
-            state = jnp.concatenate([dx.qpos, dx.qvel])
+            state = jnp.concatenate([dx.qpos, dx.qvel, dx.sensordata])
             return (dx,key), (state, c)
 
         key, subkey = jax.random.split(key)
@@ -279,9 +279,7 @@ def simulate_trajectories(
     # vmap across the batch dimension
     states_batched, costs_batched = jax.vmap(single_trajectory)(qpos_inits, qvel_inits, keys)
 
-    total_cost = jnp.mean(costs_batched)
-
-    return states_batched, total_cost
+    return states_batched, costs_batched
 
 
 # -------------------------------------------------------------
@@ -294,7 +292,9 @@ def make_loss_multi_init(
     set_control_fn,
     running_cost_fn,
     terminal_cost_fn,
-    length
+    length,
+    batch_size,
+    sample_size
 ):
     """
     Create a loss function for *multiple initial conditions*.
@@ -307,7 +307,7 @@ def make_loss_multi_init(
     # Build an FD cache once, as usual
     fd_cache = build_fd_cache(
         dx_ref,
-        target_fields={"qpos", "qvel", "ctrl"},
+        target_fields={"qpos", "qvel", "ctrl", "sensordata"},
         eps=1e-6
     )
 
@@ -315,14 +315,27 @@ def make_loss_multi_init(
     step_fn = make_step_fn(mx, set_control_fn, fd_cache)
 
     def multi_init_loss(params, static, keys):
-        _, total_cost = simulate_trajectories(
+        _, costs_batched = simulate_trajectories(
             mx, qpos_inits, qvel_inits,
             running_cost_fn, terminal_cost_fn, step_fn,
             params, static, length,keys
         )
+        total_cost = jnp.mean(costs_batched) # no samples
+        return total_cost
+    
+    def multi_init_loss_stoch(params, static, keys):
+        _, costs_batched = simulate_trajectories(
+            mx, qpos_inits, qvel_inits,
+            running_cost_fn, terminal_cost_fn, step_fn,
+            params, static, length,keys
+        )
+        costs = costs_batched.reshape(batch_size, sample_size)
+        exp_sum_costs = jnp.mean(costs, axis=-1)
+        total_cost = jnp.mean(exp_sum_costs)
+        # jax.debug.print()
         return total_cost
 
-    return multi_init_loss
+    return multi_init_loss_stoch
 
 
 # -------------------------------------------------------------

@@ -28,7 +28,7 @@ def generate_inital_conditions(key):
 
     # Reference target position in spinner local frame R_s
     _, key = jax.random.split(key, num=2)
-    theta_l = jax.random.uniform(key, (1,), minval=0.55, maxval=2.55) # Polar Coord
+    theta_l = jax.random.uniform(key, (1,), minval=0.6, maxval=2.5) # Polar Coord
     l_spinner = 0.22
     # r = jax.random.uniform(key, (1,), minval=l_spinner + 0.01, maxval=l_spinner + 0.01)
     r_l = l_spinner
@@ -59,7 +59,27 @@ def generate_inital_conditions(key):
     theta = jax.random.uniform(key, (1,), minval=-0.9, maxval=0.9)
     # dx = dx.replace(qpos=dx.qpos.at[2].set(theta[0]))
 
+    # jax.debug.breakpoint()
+
     return jnp.concatenate([q0,q1,theta])
+
+class PolicyNet(Network):
+    layers: list
+    act: callable
+
+    def __init__(self, dims: list, key):
+        keys = jax.random.split(key, len(dims))
+        self.layers = [equinox.nn.Linear(
+            dims[i], dims[i + 1], key=keys[i], use_bias=True
+        ) for i in range(len(dims) - 1)]
+        self.act = jax.nn.relu
+
+    def __call__(self, x, t):
+        for layer in self.layers[:-1]:
+            x = self.act(layer(x))
+        x = self.layers[-1](x).squeeze()
+        # x = jnp.tanh(x) * 1
+        return x
 
 if __name__ == "__main__":
 
@@ -78,51 +98,50 @@ if __name__ == "__main__":
     # qpos_inits = jnp.repeat(qpos_inits, 64, axis=0)
     # qpos_inits += 0.01 * jax.random.normal(jax.random.PRNGKey(0), qpos_inits.shape)
     init_key = jax.random.PRNGKey(10) 
-    n_batch = 200
+    n_batch = 50
+    n_samples = 20
+    Nsteps, nu = 100, 2
     keys = jax.random.split(init_key, n_batch)  # Generate 100 random keys
-    qpos_inits = jax.vmap(generate_inital_conditions, in_axes=(0))(keys)
+    qpos_inits0 = jax.vmap(generate_inital_conditions, in_axes=(0))(keys)
+
+
+    # Repeat the initial conditions `n_samples` times
+    # Method 1: Using jax.numpy.repeat
+    qpos_inits = jnp.repeat(qpos_inits0, n_samples, axis=0)  # Shape: (n_batch * n_samples, ...)
+
+    # Method 2: Using jax.numpy.tile (if you'd rather replicate the entire batch)
+    # qpos_repeated = jnp.tile(qpos_inits, (n_samples, 1))  # Shape: (n_batch * n_samples, ...)
     qvel_inits = jnp.zeros_like(qpos_inits)  # or any distribution you like
 
-    Nsteps, nu = 100, 2
 
     def running_cost(dx):
         pos_finger = dx.qpos[2]
         u = dx.ctrl
-        return 0.002 * jnp.sum(u ** 2) + 0.001 * pos_finger ** 2
+
+        touch = dx.sensordata[0]
+        return 0.002 * jnp.sum(u ** 2) + 0.001 * pos_finger ** 2 + 0.01 * (touch - 1.)**2
 
     def terminal_cost(dx):
         pos_finger = dx.qpos[2]
-        return 4 * pos_finger ** 2
+        touch = dx.sensordata[0]
+        return 4 * pos_finger ** 2 + 0.01 * (touch - 1.)**2
 
     def set_control(dx, u):
         return dx.replace(ctrl=dx.ctrl.at[:].set(u))
 
-    class PolicyNet(Network):
-        layers: list
-        act: callable
 
-        def __init__(self, dims: list, key):
-            keys = jax.random.split(key, len(dims))
-            self.layers = [equinox.nn.Linear(
-                dims[i], dims[i + 1], key=keys[i], use_bias=True
-            ) for i in range(len(dims) - 1)]
-            self.act = jax.nn.relu
-
-        def __call__(self, x, t):
-            for layer in self.layers[:-1]:
-                x = self.act(layer(x))
-            x = self.layers[-1](x).squeeze()
-            return x
 
     # Create the new multi-initial-condition loss function
     loss_fn = make_loss_multi_init(
         mx,
-        qpos_inits,     # shape (B, n_qpos)
-        qvel_inits,     # shape (B, n_qpos) or (B, n_qvel)
+        qpos_inits,     # shape (B*n_sample, n_qpos)
+        qvel_inits,     # shape (B*n_sample, n_qpos) or (B, n_qvel)
         set_control_fn=set_control,
         running_cost_fn=running_cost,
         terminal_cost_fn=terminal_cost,
-        length=Nsteps
+        length=Nsteps,
+        batch_size=n_batch,
+        sample_size=n_samples
     )
 
     # JIT the gradient
@@ -131,22 +150,22 @@ if __name__ == "__main__":
     # fd_cache = build_fd_cache(dx_template, jnp.zeros((mx.nu,)), ...)
 
     # Create your policy net, optimizer, and do gradient descent
-    nn = PolicyNet([6, 128,256, 128, 2], key=jax.random.PRNGKey(0))
-    adam = optax.adamw(1.5e-3)
+    nn = PolicyNet([7, 128,256, 128, 2], key=jax.random.PRNGKey(0))
+    adam = optax.adamw(3.e-3)
     opt_state = adam.init(equinox.filter(nn, equinox.is_array))
 
     # Same "Policy" class as before
     from diff_sim.traj_opt.policy import Policy
     optimizer = Policy(loss=loss_fn)
-    optimal_nn = optimizer.solve(nn, adam, opt_state, batch_size=n_batch, max_iter=100)
+    optimal_nn = optimizer.solve(nn, adam, opt_state, batch_size=n_batch*n_samples, max_iter=50)
 
     fd_cache = build_fd_cache(dx_template)
     step_fn = make_step_fn(mx, set_control, fd_cache)
     # Evaluate final performance *on the entire batch*
     params, static = equinox.partition(optimal_nn, equinox.is_array)
     _, subkey = jax.random.split(init_key, num=(2,)) 
-    key_batch = jax.random.split(subkey, num=(n_batch,))
-    states_batched, cost_batched = simulate_trajectories(
+    key_batch = jax.random.split(subkey, num=(n_batch*n_samples,))
+    states_batched, _ = simulate_trajectories(
         mx, qpos_inits, qvel_inits,
         running_cost, terminal_cost,
         step_fn=step_fn,
@@ -159,4 +178,4 @@ if __name__ == "__main__":
     # visualize the trajectories
     from diff_sim.utils.mj import visualise_traj_generic
     data = mujoco.MjData(model)
-    visualise_traj_generic(jnp.array(states_batched), data, model)
+    visualise_traj_generic(jnp.array(states_batched[:,:,:-1]), data, model)
