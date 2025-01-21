@@ -79,7 +79,7 @@ if __name__ == "__main__":
     # qpos_inits = jnp.repeat(qpos_inits, 64, axis=0)
     # qpos_inits += 0.01 * jax.random.normal(jax.random.PRNGKey(0), qpos_inits.shape)
     init_key = jax.random.PRNGKey(10) 
-    n_batch = 200
+    n_batch = 64
     keys = jax.random.split(init_key, n_batch)  # Generate 100 random keys
     qpos_inits = jax.vmap(generate_inital_conditions, in_axes=(0))(keys)
     qvel_inits = jnp.zeros_like(qpos_inits)  # or any distribution you like
