@@ -14,6 +14,13 @@ import time
 config.update('jax_default_matmul_precision', 'high')
 config.update("jax_enable_x64", True)
 
+def upscale(x):
+    if 'dtype' in dir(x):
+        if x.dtype == jnp.int32:
+            return jnp.int64(x)
+        elif x.dtype == jnp.float32:
+            return jnp.float64(x)
+    return x
 
 # -------------------------------------------------------------
 # Finite-difference cache
@@ -243,6 +250,7 @@ def simulate_trajectories(
         """Simulate one trajectory given a single (qpos_init, qvel_init)."""
         # Build the initial MuJoCo data
         dx0 = mjx.make_data(mx)
+        dx0 = jax.tree_map(upscale, dx0)
         dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(qpos_init))
         dx0 = dx0.replace(qvel=dx0.qvel.at[:].set(qvel_init))
 
