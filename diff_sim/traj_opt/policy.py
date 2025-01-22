@@ -259,7 +259,7 @@ def simulate_trajectories(
             dx, key = carry
             key, subkey = jax.random.split(key)
 
-            x = jnp.concatenate([dx.qpos, dx.qvel, jnp.array([dx.sensordata[0]]) ])
+            x = jnp.concatenate([dx.qpos, dx.qvel, dx.sensordata ])
             
             # Add noise to the control  
             noise = 0.5 * jax.random.normal(subkey, mx.nu)
@@ -268,7 +268,7 @@ def simulate_trajectories(
 
             dx = step_fn(dx, u)  # FD-based MuJoCo step
             c = running_cost_fn(dx)
-            state = jnp.concatenate([dx.qpos, dx.qvel, jnp.array([dx.sensordata[0]])])
+            state = jnp.concatenate([dx.qpos, dx.qvel, dx.sensordata])
             return (dx,key), (state, c)
 
         key, subkey = jax.random.split(key)

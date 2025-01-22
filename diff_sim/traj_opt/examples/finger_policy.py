@@ -154,7 +154,7 @@ if __name__ == "__main__":
     # fd_cache = build_fd_cache(dx_template, jnp.zeros((mx.nu,)), ...)
 
     # Create your policy net, optimizer, and do gradient descent
-    nn = PolicyNet([7, 128,256, 128, 2], key=jax.random.PRNGKey(0))
+    nn = PolicyNet([13, 128,256, 128, 2], key=jax.random.PRNGKey(0))
     adam = optax.adamw(3.e-3)
     opt_state = adam.init(equinox.filter(nn, equinox.is_array))
 
