@@ -98,8 +98,8 @@ if __name__ == "__main__":
     # qpos_inits = jnp.repeat(qpos_inits, 64, axis=0)
     # qpos_inits += 0.01 * jax.random.normal(jax.random.PRNGKey(0), qpos_inits.shape)
     init_key = jax.random.PRNGKey(10) 
-    n_batch = 50
-    n_samples = 20
+    n_batch = 200
+    n_samples = 1
     Nsteps, nu = 100, 2
     keys = jax.random.split(init_key, n_batch)  # Generate 100 random keys
     qpos_inits0 = jax.vmap(generate_inital_conditions, in_axes=(0))(keys)
@@ -119,12 +119,16 @@ if __name__ == "__main__":
         u = dx.ctrl
 
         touch = dx.sensordata[0]
-        return 0.002 * jnp.sum(u ** 2) + 0.001 * pos_finger ** 2 + 0.01 * (touch - 1.)**2
+        p_finger = dx.sensordata[1:4]
+        p_target = dx.sensordata[4:7]
+        return 0.002 * jnp.sum(u ** 2) + 0.001 * pos_finger ** 2 + 0.001 * jnp.sum((p_finger - p_target)**2)
 
     def terminal_cost(dx):
         pos_finger = dx.qpos[2]
         touch = dx.sensordata[0]
-        return 4 * pos_finger ** 2 + 0.01 * (touch - 1.)**2
+        p_finger = dx.sensordata[1:4]
+        p_target = dx.sensordata[4:7]
+        return 4 * pos_finger ** 2 + 0.001 * jnp.sum((p_finger - p_target)**2)
 
     def set_control(dx, u):
         return dx.replace(ctrl=dx.ctrl.at[:].set(u))
