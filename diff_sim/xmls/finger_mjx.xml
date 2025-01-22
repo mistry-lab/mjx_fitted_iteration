@@ -42,9 +42,9 @@
         <geom solimp="0 0.99 0.1" solref="0.02 1"/>
         <joint type="hinge" axis="0 -1 0"/>
         <motor ctrllimited="true" ctrlrange="-1 1"/>
-        <default class="finger">
+        <!-- <default class="finger">
             <site type="ellipsoid" size=".025 .03 .025" rgba=".5 .5 .5 .3" group="3"/>
-        </default>
+        </default> -->
     </default>
  
     <worldbody>
@@ -53,14 +53,15 @@
         <camera name="cam0" pos="0 -1 .8" xyaxes="1 0 0 0 1 2"/>
         <camera name="cam1" pos="0 -1 .4" xyaxes="1 0 0 0 0 1" />
 
-        <body name="proximal" pos="-.2 0 -0.01" childclass="finger">
+        <body name="proximal" pos="-.2 0 -0.01" >
             <geom name="proximal_decoration" type="cylinder" fromto="0 -.033 0 0 .033 0" size=".034" material="decoration" />
             <joint name="proximal" range="-150 -80" ref="-90" damping="0.05" limited="false" />
             <geom name="proximal" type="capsule" material="self" size=".03" fromto="0 0 0 0 0 -.17"/>
-            <body name="distal" pos="0 0 -.18" childclass="finger">
+            <body name="distal" pos="0 0 -.18" >
                 <joint name="distal" range="-50 50" damping="0.05" limited="false"/>
                 <geom name="distal" type="capsule" size=".028" material="self" fromto="0 0 0 0 0 -.16"/>
                 <geom name="fingertip" type="capsule" size=".03" material="effector" fromto="0 0 -.13 0 0 -.161"/>
+                <site name="fingertip_site" type="sphere" pos="0 0 -0.161"  size="0.035" rgba="1. .97 0. 0.15"/>  
             </body>
         </body>
 
@@ -71,6 +72,7 @@
             <site name="capsule_site" type="capsule" size=".065 .08" material="self" pos="0 0 0"  rgba=".3 .5 .7 0.25"/>
             <geom name="spinner_decoration" type="cylinder" fromto="0 -.045 0 0 .045 0" size=".02" material="decoration"/>
             <geom name="target" pos="0. 0. 0.12" type="sphere" size="0.02" rgba=".3 .5 .7 0.25" contype="0" conaffinity="0"/>
+            <site name="target_site" type="sphere" pos="0 0 0.12"  size=".015" rgba="1. .97 0. 0.8"/>    
         </body>
 
         <body mocap="true" name="target" pos="-.2 0 -.4" quat="0. 0.707107 0. 0.707107">
@@ -84,6 +86,8 @@
 
     <sensor>
         <touch name="touch_sphere" site="capsule_site" cutoff="1."/>
+        <framepos name="pos_fingertip" objtype="site" objname="fingertip_site" reftype="world" refname="world"/>
+        <framepos name="pos_spinner" objtype="site" objname="target_site" reftype="world" refname="world"/>
     </sensor>
 
     <actuator>
