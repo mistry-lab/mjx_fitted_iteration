@@ -100,7 +100,7 @@ if __name__ == "__main__":
     init_key = jax.random.PRNGKey(10) 
     n_batch = 200
     n_samples = 1
-    Nsteps, nu = 100, 2
+    Nsteps, nu = 75, 2
     keys = jax.random.split(init_key, n_batch)  # Generate 100 random keys
     qpos_inits0 = jax.vmap(generate_inital_conditions, in_axes=(0))(keys)
 
@@ -138,7 +138,7 @@ if __name__ == "__main__":
         # p_target = jnp.array([xt, yt])
         # p_finger = jnp.array([x_, y_])
 
-        return 0.002 * jnp.sum(u ** 2) + 0.1 * jnp.sum((p_finger - p_target)**2) + 0.001 * touch * pos_finger **2
+        return 0.00005 * jnp.sum(u ** 2) + 0.1 * jnp.sum((p_finger - p_target)**2) + 0.001 * touch * pos_finger **2
 
     def terminal_cost(dx):
         pos_finger = dx.qpos[2]
