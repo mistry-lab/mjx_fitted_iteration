@@ -121,18 +121,34 @@ if __name__ == "__main__":
         touch = dx.sensordata[0]
         p_finger = dx.sensordata[1:4]
         p_target = dx.sensordata[4:7]
-        return 0.002 * jnp.sum(u ** 2) + 0.001 * pos_finger ** 2 + 0.001 * jnp.sum((p_finger - p_target)**2)
+
+        # l1, l2 = 0.17, 0.161
+        # q0 = dx.qpos[0]
+        # q1 = dx.qpos[1]
+        # q2 = dx.qpos[2]
+        # x_ = l1 * jnp.cos(q0) + l2 * jnp.cos(q1+q0)
+        # y_ = l1 * jnp.sin(q0) + l2 * jnp.sin(q1+q0)
+
+        # Target position in spinner frame
+        # l_spinner = 0.22
+
+        # x_s, y_s = -l_spinner * jnp.sin(q2), l_spinner * jnp.cos(q2)
+        # # Reference target position in finger frame R_f
+        # xt, yt = x_s, y_s - 0.39
+        # p_target = jnp.array([xt, yt])
+        # p_finger = jnp.array([x_, y_])
+
+        return 0.002 * jnp.sum(u ** 2) + 0.1 * jnp.sum((p_finger - p_target)**2) + 0.001 * touch * pos_finger **2
 
     def terminal_cost(dx):
         pos_finger = dx.qpos[2]
         touch = dx.sensordata[0]
         p_finger = dx.sensordata[1:4]
         p_target = dx.sensordata[4:7]
-        return 4 * pos_finger ** 2 + 0.001 * jnp.sum((p_finger - p_target)**2)
+        return  10. * jnp.sum((p_finger - p_target)**2) + 4.* touch * pos_finger**2
 
     def set_control(dx, u):
         return dx.replace(ctrl=dx.ctrl.at[:].set(u))
-
 
 
     # Create the new multi-initial-condition loss function

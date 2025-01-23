@@ -66,7 +66,7 @@ def visualise_traj_generic(
             for i in range(x.shape[1]):
                 step_start = time.time()
                 qpos = x[b, i, :m.nq]
-                qvel = x[b, i, m.nq:]
+                qvel = x[b, i, m.nq:m.nq + m.nv]
                 d.qpos[:] = qpos
                 d.qvel[:] = qvel
                 mujoco.mj_forward(m, d)

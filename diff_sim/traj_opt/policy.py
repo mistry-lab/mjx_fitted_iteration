@@ -262,7 +262,7 @@ def simulate_trajectories(
             x = jnp.concatenate([dx.qpos, dx.qvel, dx.sensordata ])
             
             # Add noise to the control  
-            noise = 0.5 * jax.random.normal(subkey, mx.nu)
+            noise = 0. * jax.random.normal(subkey, mx.nu)
             # jax.debug.print("noise : {}", noise)
             u = model(x, dx.time) + noise # policy output
 
