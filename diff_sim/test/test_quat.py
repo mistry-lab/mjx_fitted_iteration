@@ -1,13 +1,22 @@
 import jax
 import jax.numpy as jnp
-import numpy as np
-from jax._src.util import safe_zip, unzip2
-from jax.flatten_util import ravel_pytree
+import mujoco
 from mujoco import mjx
-from typing import Callable
-import equinox
+import os
+from jax import config
+from diff_sim.utils.math_helper import sub_quat
+
 from dataclasses import dataclass
-from typing import Optional, Set
+from typing import Callable, Optional, Set
+import equinox
+from jax.flatten_util import ravel_pytree
+import numpy as np
+from jax._src.util import unzip2
+import time
+
+config.update('jax_default_matmul_precision', 'high')
+config.update("jax_enable_x64", True)
+
 
 def upscale(x):
     if 'dtype' in dir(x):
@@ -18,6 +27,9 @@ def upscale(x):
     return x
 
 
+# -------------------------------------------------------------
+# Finite-difference cache
+# -------------------------------------------------------------
 @dataclass(frozen=True)
 class FDCache:
     """Holds all the precomputed info needed by the custom FD-based backward pass."""
@@ -32,7 +44,6 @@ class FDCache:
 def build_fd_cache(
         dx_ref: mjx.Data,
         target_fields: Optional[Set[str]] = None,
-        ctrl_dim: Optional[int] = None,
         eps: float = 1e-6
 ) -> FDCache:
     """
@@ -42,15 +53,12 @@ def build_fd_cache(
       - The shape info for control
     """
     if target_fields is None:
-        target_fields = {"qpos", "qvel", "ctrl"}
-
-    if ctrl_dim is None:
-        ctrl_dim = dx_ref.ctrl.shape[0]
+        target_fields = {"qpos", "qvel", "ctrl", "qfrc_applied"}
 
     # Flatten dx
     dx_array, unravel_dx = ravel_pytree(dx_ref)
     dx_size = dx_array.shape[0]
-    num_u_dims = ctrl_dim
+    num_u_dims = dx_ref.ctrl.shape[0]
 
     # Gather leaves for qpos, qvel, ctrl
     leaves_with_path = list(jax.tree_util.tree_leaves_with_path(dx_ref))
@@ -155,7 +163,7 @@ def make_step_fn(
 
         # =====================================================
         # =============== FD wrt control (u) ==================
-       # =====================================================
+        # =====================================================
         def fdu_plus(i):
             e = jnp.zeros_like(u_in_flat).at[i].set(eps)
             u_in_eps = (u_in_flat + e).reshape(u_in.shape)
@@ -209,72 +217,187 @@ def make_step_fn(
     return step_fn
 
 
-def make_loss_fn(
-        mx,
-        qpos_init: jnp.ndarray,
-        set_ctrl_fn: Callable[[mjx.Data, jnp.ndarray], mjx.Data],
-        running_cost_fn: Callable[[mjx.Data], float],
-        terminal_cost_fn: Callable[[mjx.Data], float],
-        fd_cache: FDCache,
-):
-    # Build the step function with custom_vjp + FD
-    single_arg_step_fn = make_step_fn(
-        mx=mx,
-        set_control_fn=set_ctrl_fn,
-        fd_cache=fd_cache,
+############################################################################
+
+def running_cost(dx):
+    # return sub_quat()
+    quat_ref = jnp.array([1., 0., 0., 0.])
+    quat_diff = sub_quat(quat_ref, dx.qpos[3:7])
+
+    # return 0.01*jnp.array([jnp.sum(quat_diff**2)]) + 0.00001*dx.qfrc_applied[5]**2
+    return 0.00001 * jnp.array([dx.qfrc_applied[5] ** 2])
+
+
+def step_scan_mjx(carry, u):
+    dx = carry
+    # Dynamics function
+    dx = step_fn(dx, u)
+    t = jnp.expand_dims(dx.time, axis=0)
+    cost = running_cost(dx)
+    # dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[:].set(jnp.zeros_like(dx.qfrc_applied)))
+    return (dx), jnp.concatenate([dx.qpos, dx.qvel, cost, t])
+
+
+# from functools import partial
+# @partial(jax.vmap, in_axes=(0, 0))  # Batch over both `qpos_init` and `U`
+def simulate_trajectory_mjx(qpos_init, U):
+    dx = mjx.make_data(mx)
+    dx = dx.replace(qpos=dx.qpos.at[:].set(qpos_init))
+    # dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[:].set(u))
+    (dx), res = jax.lax.scan(step_scan_mjx, (dx), U, length=Nlength)
+    res, cost, t = res[..., :-2], res[..., -2], res[..., -1]
+    return res, cost, t
+
+
+vmap_simulate_trajectory_mjx = jax.vmap(lambda qpos_init, U: simulate_trajectory_mjx(qpos_init, U), in_axes=(0, 0))
+
+
+# def compute_trajectory_costs(qpos_init, U):
+#     res, cost, t = vmap_simulate_trajectory_mjx(qpos_init, U)
+#     return cost, res, t
+
+def simulate_trajectory_mj(qpos_init, u):
+    d = mujoco.MjData(model)
+    d.qpos = qpos_init
+    d.qfrc_applied[0] = u
+    qq = []
+    qv = []
+    t = []
+    for k in range(Nlength):
+        mujoco.mj_step(model, d)
+        qq.append(d.qpos[:].copy().tolist())
+        qv.append(d.qvel[:].copy().tolist())
+        t.append(d.time)
+        d.qfrc_applied[0] = 0.
+    return np.array(qq), np.array(qv), np.array(t)
+
+
+def visualise(qpos, qvel):
+    import time
+    from mujoco import viewer
+    data = mujoco.MjData(model)
+    data.qpos = idata.qpos
+
+    with viewer.launch_passive(model, data) as viewer:
+        for i in range(qpos.shape[0]):
+            step_start = time.time()
+            data.qpos[:] = qpos[i]
+            data.qvel[:] = qvel[i]
+            mujoco.mj_forward(model, data)
+            viewer.sync()
+            time_until_next_step = model.opt.timestep - (time.time() - step_start)
+            if time_until_next_step > 0:
+                # time.sleep(time_until_next_step)
+                time.sleep(0.075)
+
+
+def visu_u(U):
+    qpos = jnp.expand_dims(jnp.array(idata.qpos), axis=0)
+    qpos = jnp.repeat(qpos, 1, axis=0)
+
+    # u = set_u(jnp.array([u0]))
+    res, cost, t = vmap_simulate_trajectory_mjx(qpos, U)
+    qpos_mjx, qvel_mjx = res[0, :, :model.nq], res[0, :, model.nq:]
+    visualise(qpos_mjx, qvel_mjx)
+
+
+@jax.jit
+def compute_loss_grad(qpos_init, u):
+    jac_fun = jax.jacrev(lambda x: loss_funct(qpos_init, x))
+    ad_grad = jac_fun(u)
+    return ad_grad
+
+
+def loss_funct(qpos_init, U):
+    # u = set_u(u)
+    costs = simulate_trajectory_mjx(qpos_init, U)[0]
+    costs = jnp.sum(costs, axis=1)
+    costs = jnp.mean(costs)
+    return jnp.array([costs])
+
+
+# def set_u(u0):
+#     u = jnp.zeros_like(idata.qfrc_applied)
+#     u = jnp.expand_dims(u, axis=0)
+#     u = jnp.repeat(u, u0.shape[0], axis=0)
+#     u = u.at[:,5].set(u0)
+#     return u
+
+# @jax.jit
+# def get_traj_grad(qpos_init,u):
+#     jac_fun = jax.jacrev(lambda x: compute_trajectory_costs(qpos_init,set_u(x))[0])
+#     ad_grad = jac_fun(jnp.array(u))
+#     return ad_grad
+
+# Gradient descent
+def gradient_descent(qpos, x0, learning_rate=0.1, tol=1e-6, max_iter=100):
+    x = x0
+    for i in range(max_iter):
+        # x =jnp.round(x,5)
+        grad = compute_loss_grad(qpos, x)[0]
+        grad = compute_loss_grad(qpos, x)[0]
+        x_new = x - learning_rate * grad  # Gradient descent update
+
+        print(f"Iteration {i}: x = {x}, f(x) = {loss_funct(qpos, x)}")
+
+        # Check for convergence
+        if abs(x_new - x) < tol:
+            break
+        x = x_new
+
+    return x
+
+
+def set_control(dx, u):
+    dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[5].set(u[0]))
+    return dx
+
+
+if __name__ == "__main__":
+    # Load mj and mjx model
+    model = mujoco.MjModel.from_xml_path(os.path.join(os.path.dirname(__file__), '../xmls/two_body.xml'))
+    mx = mjx.put_model(model)
+    dx_ref = mjx.make_data(mx)
+
+    # Build an FD cache once, as usual
+    fd_cache = build_fd_cache(
+        dx_ref,
+        target_fields={"qpos", "qvel", "ctrl", "sensordata"},
+        eps=1e-6
     )
 
-    @equinox.filter_jit
-    def simulate_trajectory(U: jnp.ndarray):
-        dx0 = mjx.make_data(mx)
-        dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(qpos_init))
-        dx0 = mjx.step(mx, dx0)  # initial sync
+    # FD-based custom VJP
+    step_fn = make_step_fn(mx, set_control, fd_cache)
 
-        def scan_body(dx, u):
-            dx_next = single_arg_step_fn(dx, u)
-            cost_t = running_cost_fn(dx_next)
-            state_t = jnp.concatenate([dx_next.qpos, dx_next.qvel])
-            return dx_next, (state_t, cost_t)
+    idata = mujoco.MjData(model)
 
-        dx_final, (states, costs) = jax.lax.scan(scan_body, dx0, U)
-        total_cost = jnp.sum(costs) + terminal_cost_fn(dx_final)
-        return states, total_cost
+    qx0, qz0, qx1 = -0., 0.25, -0.2  # Inititial positions
+    idata.qpos[0], idata.qpos[2], idata.qpos[7] = qx0, qz0, qx1
+    Nlength = 40  # horizon lenght
 
-    def loss(U: jnp.ndarray):
-        state, total_cost = simulate_trajectory(U)
-        return total_cost, state
+    u0 = jnp.array([0.002])
+    batch = 1
+    # U0 = jnp.repeat(jnp.array([u0]), Nlength)
+    U0 = jnp.repeat(jnp.array([[u0]]), Nlength, axis=1)  # Commands
+    U0 = U0.repeat(batch, axis=0)  # Batch size = 1
 
-    return loss
+    qpos = jnp.expand_dims(jnp.array(idata.qpos), axis=0)
+    qpos = jnp.repeat(qpos, batch, axis=0)
+    # u = set_u(jnp.array([u0]))
 
+    # Simulate trajectory
+    # res, cost, t = simulate_trajectory_mjx(qpos, u)
+    # qpos_mjx, qvel_mjx = res[0,:,:model.nq], res[0,:,model.nq:]
 
-@dataclass
-class PMP:
-    """
-    A gradient-based optimizer for the FD-based MuJoCo trajectory problem.
-    """
-    loss: Callable[[jnp.ndarray], float]
+    # Visualise a trajectory
+    # visu_u(U0)
 
-    def grad_loss(self, U: jnp.ndarray) -> jnp.ndarray:
-        return jax.grad(self.loss)(U)
+    # Initial guess
+    x0 = U0[0]
+    # Initial position
+    qpos0 = qpos[0]
+    # loss_funct(qpos0,x0)
+    compute_loss_grad(qpos0, x0)
 
-    def solve(
-            self,
-            U0: jnp.ndarray,
-            learning_rate: float = 1e-2,
-            tol: float = 1e-6,
-            max_iter: int = 100
-    ):
-        U = U0
-        for i in range(max_iter):
-            g = self.grad_loss(U)
-            U_new = U - learning_rate * g
-            cost_val = self.loss(U_new)
-            print(f"\n--- Iteration {i} ---")
-            print(f"Cost={cost_val}")
-            print(f"||grad||={jnp.linalg.norm(g)}")
-            # Check for convergence
-            if jnp.linalg.norm(U_new - U) < tol or jnp.isnan(g).any():
-                print(f"Converged at iteration {i}.")
-                return U_new
-            U = U_new
-        return U
+    # optimal_x = gradient_descent(qpos, x0, learning_rate=0.01)
+    # grad = compute_loss_grad(qpos, x0)[0]
