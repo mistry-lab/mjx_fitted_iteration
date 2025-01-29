@@ -7,7 +7,24 @@ from mujoco import mjx
 from typing import Callable
 import equinox
 from dataclasses import dataclass
-from typing import Optional, Set
+from typing import Optional, Set, Sequence
+from mujoco.mjx._src.types import JointType
+from mujoco.mjx._src.forward import _integrate_pos as integrate_pos
+from mujoco.mjx._src import math
+from typing import Dict
+from dataclasses import dataclass, field
+
+
+
+def quat_integrate(q: jax.Array, v: jax.Array, dt: jax.Array) -> jax.Array:
+  """Integrates a quaternion given angular velocity and dt."""
+  v, norm_ = normalize_with_norm(v)
+  angle = dt * norm_
+  q_res = axis_angle_to_quat(v, angle)
+  q_res = quat_mul(q, q_res)
+  return normalize(q_res)
+
+
 
 def upscale(x):
     if 'dtype' in dir(x):
@@ -17,78 +34,209 @@ def upscale(x):
             return jnp.float64(x)
     return x
 
-
 @dataclass(frozen=True)
 class FDCache:
     """Holds all the precomputed info needed by the custom FD-based backward pass."""
     unravel_dx: Callable[[jnp.ndarray], mjx.Data]
     sensitivity_mask: jnp.ndarray
     inner_idx: jnp.ndarray
+    field_indices_map: Dict[str, jnp.ndarray]
     dx_size: int
     num_u_dims: int
     eps: float = 1e-6
 
+#
+# from dataclasses import dataclass, field
+# from typing import Callable, Optional, Set
+# import jax
+# import jax.numpy as jnp
+# import numpy as np
+# from jax._src.util import unzip2
+# from jax.flatten_util import ravel_pytree
+# from mujoco import mjx
+
+from dataclasses import dataclass
+from typing import Callable, Optional, Set
+import jax
+import jax.numpy as jnp
+import numpy as np
+from jax.flatten_util import ravel_pytree
+from jax._src.util import unzip2
+from mujoco import mjx
+
+class JointType:
+    FREE = 0
+    BALL = 1
+    SLIDE = 2
+    HINGE = 3
+
+@dataclass(frozen=True)
+class FDCache:
+    """Holds all the precomputed info needed by the custom FD-based backward pass."""
+    unravel_dx: Callable[[jnp.ndarray], mjx.Data]
+    sensitivity_mask: jnp.ndarray
+    inner_idx: jnp.ndarray  # "normal" FD indices (excludes free/ball quaternion)
+    dx_size: int
+    num_u_dims: int
+    eps: float = 1e-6
+    # Extra outputs for quaternions
+    quat_idx: Optional[jnp.ndarray] = None       # all free/ball quaternion in global flatten
+    quat_inner_idx: Optional[jnp.ndarray] = None # subset that also lies in target_fields
+    quat_init_idx: Optional[jnp.ndarray] = None
+    axes_list: Optional[jnp.ndarray] = None
 
 def build_fd_cache(
-        dx_ref: mjx.Data,
-        target_fields: Optional[Set[str]] = None,
-        ctrl_dim: Optional[int] = None,
-        eps: float = 1e-6
+    mx,                   # MuJoCo model wrapper, for jnt_type, jnt_qposadr
+    dx_ref: mjx.Data,     # reference data object
+    target_fields: Optional[Set[str]] = None,
+    ctrl_dim: Optional[int] = None,
+    eps: float = 1e-6
 ) -> FDCache:
     """
-    Build a cache containing:
-      - Flatten/unflatten for dx_ref
-      - The mask for relevant FD indices (e.g. qpos, qvel, ctrl)
-      - The shape info for control
+    Build an FDCache that:
+      1) Finds the global flatten range of qpos within dx_ref.
+      2) Converts MuJoCo's local qpos indices for free/ball joints
+         into *global* flatten indices (quat_idx).
+      3) Gathers all target_fields into 'candidate_idx_full'.
+      4) Splits out 'quat_inner_idx' from 'candidate_idx_full', removing them
+         so 'inner_idx' contains only non-quaternion states.
     """
     if target_fields is None:
         target_fields = {"qpos", "qvel", "ctrl"}
 
-    if ctrl_dim is None:
-        ctrl_dim = dx_ref.ctrl.shape[0]
-
-    # Flatten dx
+    # Flatten dx_ref
     dx_array, unravel_dx = ravel_pytree(dx_ref)
     dx_size = dx_array.shape[0]
+
+    # If ctrl_dim not specified, get from dx_ref.ctrl
+    if ctrl_dim is None:
+        ctrl_dim = dx_ref.ctrl.shape[0]
     num_u_dims = ctrl_dim
 
-    # Gather leaves for qpos, qvel, ctrl
+    # ----------------------------------------------------------------
+    # A) Identify the global flatten range for the "qpos" leaf
+    # ----------------------------------------------------------------
+    # We assume there's exactly one leaf whose path has name=='qpos'
     leaves_with_path = list(jax.tree_util.tree_leaves_with_path(dx_ref))
     sizes, _ = unzip2((jnp.size(leaf), jnp.shape(leaf)) for (_, leaf) in leaves_with_path)
-    indices = tuple(np.cumsum(sizes))
+    offsets = np.cumsum(sizes)  # The end offsets for each leaf in the flatten array
 
-    idx_target_state = []
+    # We'll find which leaf index i is 'qpos'
+    qpos_leaf_idx = None
+    running_start = 0
     for i, (path, leaf_val) in enumerate(leaves_with_path):
-        # Check if any level in the path has a 'name' that is in target_fields
-        name_matches = any(
-            getattr(level, 'name', None) in target_fields
-            for level in path
-        )
+        leaf_end = offsets[i]
+        # Check if this leaf is "qpos"
+        name_matches = any(getattr(p, 'name', None) == 'qpos' for p in path)
         if name_matches:
-            idx_target_state.append(i)
+            qpos_leaf_idx = i
+            qpos_leaf_start = running_start
+            break
+        running_start = leaf_end
 
+    # If we can't find qpos leaf, raise an error or handle differently
+    if qpos_leaf_idx is None:
+        raise RuntimeError("Could not find a 'qpos' leaf in dx_ref to map quaternion indices.")
+
+    # So the global flatten range for qpos is [qpos_leaf_start : qpos_leaf_start + qpos_leaf_size]
+    # local qpos index i in [0..(nq-1)] maps to global index (qpos_leaf_start + i)
+
+    # ----------------------------------------------------------------
+    # B) Build "quat_idx_full" in global flatten space
+    # ----------------------------------------------------------------
+    # For each free or ball joint, we add the last 4 or all 4 local qpos indices,
+    # then shift them by qpos_leaf_start to get global indices.
+    # e.g. for FREE => local [3..6] => global [qpos_leaf_start+3..+6]
+    # for BALL => local [0..3], etc.
+    local_quat_indices = []
+    for j, jtype in enumerate(mx.jnt_type):
+        if jtype == JointType.FREE:
+            start = mx.jnt_qposadr[j]     # local qpos index for that joint
+            local_quat_indices.append(np.arange(start+3, start+7))
+        elif jtype == JointType.BALL:
+            start = mx.jnt_qposadr[j]
+            local_quat_indices.append(np.arange(start, start+4))
+        # else HINGE/SLIDE => skip
+
+    if len(local_quat_indices) == 0:
+        quat_idx_full = np.array([], dtype=int)
+        quat_idx = None
+    else:
+        # flatten them
+        loc_concat = np.concatenate(local_quat_indices, axis=0)
+        quat_idx = jnp.array(loc_concat, dtype=jnp.int32)
+        # shift by qpos_leaf_start
+        quat_idx_full = loc_concat + qpos_leaf_start
+
+    # ----------------------------------------------------------------
+    # C) Gather "candidate_idx_full" for target_fields
+    #     i.e. flatten indices for qpos, qvel, ctrl, etc.
+    # ----------------------------------------------------------------
     def leaf_index_range(leaf_idx):
-        start = 0 if leaf_idx == 0 else indices[leaf_idx - 1]
-        end = indices[leaf_idx]
-        return np.arange(start, end)
+        # [start, end)
+        start_ = 0 if leaf_idx == 0 else offsets[leaf_idx-1]
+        end_ = offsets[leaf_idx]
+        return np.arange(start_, end_)
 
-    # Combine all relevant leaf sub-ranges
-    inner_idx_list = []
-    for i in idx_target_state:
-        inner_idx_list.append(leaf_index_range(i))
-    inner_idx = np.concatenate(inner_idx_list, axis=0)
-    inner_idx = jnp.array(inner_idx, dtype=jnp.int32)
+    candidate_subsets = []
+    for i, (path, leaf_val) in enumerate(leaves_with_path):
+        name_matches = any(getattr(p, 'name', None) in target_fields for p in path)
+        if name_matches:
+            candidate_subsets.append(leaf_index_range(i))
+    if len(candidate_subsets) > 0:
+        candidate_idx_full = np.concatenate(candidate_subsets, axis=0)
+    else:
+        candidate_idx_full = np.array([], dtype=int)
 
-    # Build the sensitivity mask
-    sensitivity_mask = jnp.zeros_like(dx_array).at[inner_idx].set(1.0)
+    # ----------------------------------------------------------------
+    # D) Build "quat_inner_idx" = intersection of candidate_idx_full & quat_idx_full
+    #    Then remove them from candidate_idx_full => "non_quat_inner_idx"
+    # ----------------------------------------------------------------
+    if quat_idx_full.size == 0 or candidate_idx_full.size == 0:
+        quat_inner = np.array([], dtype=int)
+    else:
+        # intersect
+        quat_inner = np.intersect1d(quat_idx_full, candidate_idx_full)
 
+    # Remove them from candidate
+    non_quat_inner = np.setdiff1d(candidate_idx_full, quat_inner)
+
+    # Convert to jnp
+    if quat_inner.size == 0:
+        quat_inner_idx = None
+    else:
+        quat_inner_idx = jnp.array(quat_inner, dtype=jnp.int32)
+
+    inner_idx = jnp.array(non_quat_inner, dtype=jnp.int32)
+
+    # ----------------------------------------------------------------
+    # E) Build sensitivity_mask for the final "inner_idx" only
+    # ----------------------------------------------------------------
+    sensitivity_mask = jnp.zeros_like(dx_array)
+    sensitivity_mask = sensitivity_mask.at[inner_idx].set(1.0)
+    sensitivity_mask = sensitivity_mask.at[quat_inner_idx].set(1.0)
+
+    # quat by inner size by 2
+    # get befginning indexes of the quats
+    quat_init_idx = jnp.repeat(quat_inner_idx[quat_inner_idx % 4 == 0], 3)
+    # FOr each index above,
+    axes_list = jnp.tile(jnp.array([0, 1, 2]), len(quat_inner_idx) // 4)
+    # Now vmap over both lists
+
+    # ----------------------------------------------------------------
+    # F) Return FDCache
+    # ----------------------------------------------------------------
     return FDCache(
-        unravel_dx=unravel_dx,
-        sensitivity_mask=sensitivity_mask,
-        inner_idx=inner_idx,
-        dx_size=dx_size,
-        num_u_dims=num_u_dims,
-        eps=eps
+        unravel_dx = unravel_dx,
+        sensitivity_mask = sensitivity_mask,
+        inner_idx = inner_idx,
+        dx_size = dx_size,
+        num_u_dims = num_u_dims,
+        eps = eps,
+        quat_idx = quat_idx,
+        quat_inner_idx = quat_inner_idx,
+        quat_init_idx = quat_init_idx,
+        axes_list = axes_list,
     )
 
 
@@ -150,16 +298,22 @@ def make_step_fn(
         unravel_dx = fd_cache.unravel_dx
         sensitivity_mask = fd_cache.sensitivity_mask
         inner_idx = fd_cache.inner_idx
+        quat_inner_idx = fd_cache.quat_inner_idx
+        quat_idx = fd_cache.quat_idx
+        quat_init_idx = fd_cache.quat_init_idx
+        axes_list = fd_cache.axes_list
         num_u_dims = fd_cache.num_u_dims
         eps = fd_cache.eps
 
         # =====================================================
         # =============== FD wrt control (u) ==================
-       # =====================================================
+        # =====================================================
         def fdu_plus(i):
             e = jnp.zeros_like(u_in_flat).at[i].set(eps)
             u_in_eps = (u_in_flat + e).reshape(u_in.shape)
             dx_perturbed = step_fn(dx_in, u_in_eps)
+
+
             dx_perturbed_array, _ = ravel_pytree(dx_perturbed)
             # Only keep relevant dims
             return sensitivity_mask * (dx_perturbed_array - dx_out_array) / eps
@@ -176,8 +330,26 @@ def make_step_fn(
             dx_in_perturbed = unravel_dx(dx_array + perturbation)
             dx_perturbed = step_fn(dx_in_perturbed, u_in)
             dx_perturbed_array, _ = ravel_pytree(dx_perturbed)
+            # qpos_perturbed_array = dx_perturbed_array[qpos_idx]
+            # qpos_out_array = dx_out_array[qpos_idx]
+            # return dx_perturbed_array
             # Only keep relevant dims
             return sensitivity_mask * (dx_perturbed_array - dx_out_array) / eps
+
+        def fdx_for_quat(quat_idx, axe_idx):
+            perturbation = jnp.zeros(3).at[axe_idx].set(1.0)
+            # Integrate qpos with eps
+            quat = quat_integrate(dx_array[quat_idx:quat_idx+4],perturbation, jnp.array([eps]) )
+
+            # step funciton
+
+
+
+        # def diff(dx_perturbed_array, dx_out_array, idx):
+        #     return sensitivity_mask * (dx_perturbed_array - dx_out_array) / eps
+        #
+        # def pos_diff(dx_perturbed_array, dx_out_array):
+        #     return sensitivity_mask * (dx_perturbed_array - dx_out_array) / eps
 
         # shape = (len(inner_idx), dx_dim)
         Jx_rows = jax.vmap(fdx_for_index)(inner_idx)
@@ -191,8 +363,9 @@ def make_step_fn(
         # We want sum_i [ Jx_rows[i] * g_array[inner_idx[i]] ].
         # => shape (dx_dim,)
         # Scatter those rows back to a full (dx_dim, dx_dim) matrix
-        def scatter_rows(subset_rows, subset_indices, full_shape):
-            base = jnp.zeros(full_shape, dtype=subset_rows.dtype)
+        def scatter_rows(subset_rows, subset_indices, full_shape, base=None):
+            if base is None:
+                base = jnp.zeros(full_shape, dtype=subset_rows.dtype)
             return base.at[subset_indices].set(subset_rows)
 
         dx_dim = dx_array.size

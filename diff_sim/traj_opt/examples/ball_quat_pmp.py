@@ -13,13 +13,22 @@ if __name__ == "__main__":
     mx = mjx.put_model(model)
     dx_ref = mjx.make_data(mx)
 
+    # fd cache needs to return indicies for free and ball joints separately if they exist fintie difference will then
+    # perturb these indicies specifically in a separate function to perturb differently based on theirs lists. diff is
+    # also done in different manner (same as previous) for free and ball joints
+
     # Build an FD cache once, as usual
     fd_cache = build_fd_cache(
+        mx,
         dx_ref,
-        target_fields={"qpos", "qvel", "ctrl", "sensordata"},
+        target_fields={"qpos", "qvel", "ctrl", "sensordata", "qfrc_applied", "qacc"},
         ctrl_dim=1,
         eps=1e-6
     )
+    # break out of the main
+    from IPython import embed
+    embed()
+    print(f"quat index: {fd_cache.quat_idx}")
 
     def running_cost(dx: mjx.Data):
         # return sub_quat()
@@ -45,7 +54,7 @@ if __name__ == "__main__":
     idata = mujoco.MjData(model)
     qx0, qz0, qx1 = -0., 0.25, -0.2  # Inititial positions
     idata.qpos[0], idata.qpos[2], idata.qpos[7] = qx0, qz0, qx1
-    Nlength = 40  # horizon length
+    Nlength = 40
 
     u0 = jnp.ones(Nlength) * 0.002
     u0 = jnp.expand_dims(u0, 1)
