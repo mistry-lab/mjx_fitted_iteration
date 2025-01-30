@@ -1,19 +1,17 @@
-import jax
-import jax.numpy as jnp
-import numpy as np
-from jax._src.util import safe_zip, unzip2
-from jax.flatten_util import ravel_pytree
-from mujoco import mjx
-from typing import Callable
 import equinox
-from dataclasses import dataclass
-from typing import Optional, Set, Sequence
 from mujoco.mjx._src.types import JointType
 from mujoco.mjx._src.forward import _integrate_pos as integrate_pos
 from mujoco.mjx._src.math import quat_integrate, quat_sub
 from mujoco.mjx._src import math
 from typing import Dict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import Callable, Optional, Set
+import jax
+import jax.numpy as jnp
+import numpy as np
+from jax.flatten_util import ravel_pytree
+from jax._src.util import unzip2
+from mujoco import mjx
 
 
 
@@ -55,20 +53,8 @@ class FDCache:
 # from jax.flatten_util import ravel_pytree
 # from mujoco import mjx
 
-from dataclasses import dataclass
-from typing import Callable, Optional, Set
-import jax
-import jax.numpy as jnp
-import numpy as np
-from jax.flatten_util import ravel_pytree
-from jax._src.util import unzip2
-from mujoco import mjx
 
-class JointType:
-    FREE = 0
-    BALL = 1
-    SLIDE = 2
-    HINGE = 3
+
 
 @dataclass(frozen=True)
 class FDCache:
@@ -85,6 +71,9 @@ class FDCache:
     quat_inner_idx: Optional[jnp.ndarray] = None # subset that also lies in target_fields
     quat_init_idx: Optional[jnp.ndarray] = None
     axes_list: Optional[jnp.ndarray] = None
+    quat_insert_d_index: Optional[jnp.ndarray] = None
+    quat_insert_0_index: Optional[jnp.ndarray] = None
+
 
 def build_fd_cache(
     mx,                   # MuJoCo model wrapper, for jnt_type, jnt_qposadr
@@ -227,6 +216,10 @@ def build_fd_cache(
     # axes_list = jnp.array([0,1,2,0,1,2], dtype=jnp.int32)
     # Now vmap over both lists
 
+    idx = (jnp.arange(0, quat_inner_idx.shape[0], 1) % 4) != 0
+    quat_insert_0_index = quat_inner_idx[jnp.where((jnp.arange(0, quat_inner_idx.shape[0], 1) % 4) != 0)[0]]
+    quat_insert_d_index = quat_inner_idx[jnp.where((jnp.arange(0, quat_inner_idx.shape[0], 1) % 4) == 0)[0]]
+
     # ----------------------------------------------------------------
     # F) Return FDCache
     # ----------------------------------------------------------------
@@ -242,6 +235,7 @@ def build_fd_cache(
         quat_inner_idx = quat_inner_idx,
         quat_init_idx = quat_init_idx,
         axes_list = axes_list,
+        quat_insert_d_index = quat_insert_d_index
     )
 
 
@@ -312,6 +306,8 @@ def make_step_fn(
         eps = fd_cache.eps
 
         quat_inner_init_idx_norep = quat_inner_idx[::4]
+        quat_insert_0_index = fd_cache.quat_insert_0_index
+        quat_insert_d_index = fd_cache.quat_insert_d_index
 
         # =====================================================
         # =============== FD wrt control (u) ==================
@@ -415,9 +411,19 @@ def make_step_fn(
         dx_dim = dx_array.size
 
         # Solution 2 : Reduced size multiplication (inner_idx, inner_idx) @ (inner_idx,)
-        d_x_flat_sub = Jx_rows[:, inner_idx] @ g_array[inner_idx]
-        d_x_flat = scatter_rows(d_x_flat_sub, inner_idx, (dx_dim,))
 
+        zeros = jnp.zeros_like(Jxq_rows[0])
+
+        d_x_flat_sub = Jx_rows[:, inner_idx] @ g_array[inner_idx]
+        d_x_flat_q_sub = Jxq_rows[:, quat_inner_idx] @ g_array[quat_inner_idx]
+
+        jax.debug.print(f"Jxq_rows: {Jxq_rows.shape}")
+        jax.debug.print(f"Jx_rows: {Jx_rows.shape}")
+        jax.debug.print(f"d_x_flat_sub: {d_x_flat_q_sub.shape}")
+
+        d_x_flat = scatter_rows(d_x_flat_sub, inner_idx, (dx_dim,))
+        d_x_flat = scatter_rows(d_x_flat_q_sub, quat_insert_d_index, (dx_dim,), d_x_flat)
+        dx_
         d_u = Ju_array[:, inner_idx] @ g_array[inner_idx]
         d_x = unravel_dx(d_x_flat)
         return (d_x, d_u)
