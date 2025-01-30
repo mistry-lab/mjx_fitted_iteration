@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Optional, Set, Sequence
 from mujoco.mjx._src.types import JointType
 from mujoco.mjx._src.forward import _integrate_pos as integrate_pos
-from mujoco.mjx._src.math import quat_integrate
+from mujoco.mjx._src.math import quat_integrate, quat_sub
 from mujoco.mjx._src import math
 from typing import Dict
 from dataclasses import dataclass, field
@@ -221,7 +221,6 @@ def build_fd_cache(
     # get befginning indexes of the quats
     quat_init_idx = jnp.repeat(quat_inner_idx[::4],3)
     quat_local_init_idx = jnp.repeat(quat_idx[::4],3)
-    
  
     # FOr each index above,
     axes_list = jnp.tile(jnp.array([0, 1, 2], dtype=jnp.int32), len(quat_inner_idx) // 4)
@@ -312,6 +311,8 @@ def make_step_fn(
         num_u_dims = fd_cache.num_u_dims
         eps = fd_cache.eps
 
+        quat_inner_init_idx_norep = quat_inner_idx[::4]
+
         # =====================================================
         # =============== FD wrt control (u) ==================
         # =====================================================
@@ -328,6 +329,43 @@ def make_step_fn(
         # shape = (num_u_dims, dx_dim)
         Ju_array = jax.vmap(fdu_plus)(jnp.arange(num_u_dims))
 
+        def assign_quat(array_in,q_idx):
+            quat_ = jnp.zeros(4)
+            quat_ = quat_.at[0].set(array_in[q_idx])
+            quat_ = quat_.at[1].set(array_in[q_idx+1])
+            quat_ = quat_.at[2].set(array_in[q_idx+2])
+            quat_ = quat_.at[3].set(array_in[q_idx+3])
+            return quat_
+        
+        def assign_inplace_quat_array(array_in, args):
+            quat, q_idx = args
+            array_in = array_in.at[q_idx].set(quat[0])
+            array_in = array_in.at[q_idx+1].set(quat[1])
+            array_in = array_in.at[q_idx+2].set(quat[2])
+            array_in = array_in.at[q_idx+3].set(quat[3])
+            return array_in, None
+
+        def assign_inplace_quat_pytree(pytree_in, quat, q_idx):
+            pytree_in = pytree_in.replace(qpos=pytree_in.qpos.at[q_idx].set(quat[0]))
+            pytree_in = pytree_in.replace(qpos=pytree_in.qpos.at[q_idx+1].set(quat[1]))
+            pytree_in = pytree_in.replace(qpos=pytree_in.qpos.at[q_idx+2].set(quat[2]))
+            pytree_in = pytree_in.replace(qpos=pytree_in.qpos.at[q_idx+3].set(quat[3]))
+            return pytree_in
+
+        def diff_quat(array0,array1,q_idx):
+            quat0 = assign_quat(array0, q_idx)
+            quat1 = assign_quat(array1, q_idx)
+            # Return [0.,vel_x, vel_y, vel_z] to fit the dimension of dx_in
+            return jnp.insert(quat_sub(quat0, quat1), 0, 0.0)
+        diff_quat_vmap = jax.vmap(diff_quat, in_axes=(None,None,0))
+
+        def state_diff(array0, array1):
+            vels = diff_quat_vmap(array0, array1,quat_inner_init_idx_norep)
+            diff_array = array0 - array1  
+            diff_array, _ = jax.lax.scan(assign_inplace_quat_array, diff_array, (vels, quat_inner_init_idx_norep))
+            diff_array = diff_array / eps
+            return diff_array
+
         # =====================================================
         # ================ FD wrt state (dx) ==================
         # =====================================================
@@ -341,26 +379,19 @@ def make_step_fn(
             # qpos_out_array = dx_out_array[qpos_idx]
             # return dx_perturbed_array
             # Only keep relevant dims
-            return sensitivity_mask * (dx_perturbed_array - dx_out_array) / eps
+            return sensitivity_mask * state_diff(dx_perturbed_array, dx_out_array)
 
         def fdx_for_quat(q_idx, a_idx):
             """ q_idx is the local index for dx.qpos.
             """
             axe_perturbed = jnp.zeros(3).at[a_idx].set(1.0)
             dx_in_perturbed = dx_in
-            quat_ = jnp.zeros(4)
-            quat_ = quat_.at[0].set(dx_in.qpos[q_idx])
-            quat_ = quat_.at[1].set(dx_in.qpos[q_idx+1])
-            quat_ = quat_.at[2].set(dx_in.qpos[q_idx+2])
-            quat_ = quat_.at[3].set(dx_in.qpos[q_idx+3])
+            quat_= assign_quat(dx_in.qpos, q_idx)
             quat_perturbed = quat_integrate(quat_, axe_perturbed, jnp.array(eps))
-            dx_in_perturbed = dx_in_perturbed.replace(qpos=dx_in_perturbed.qpos.at[q_idx].set(quat_perturbed[0]))
-            dx_in_perturbed = dx_in_perturbed.replace(qpos=dx_in_perturbed.qpos.at[q_idx+1].set(quat_perturbed[1]))
-            dx_in_perturbed = dx_in_perturbed.replace(qpos=dx_in_perturbed.qpos.at[q_idx+2].set(quat_perturbed[2]))
-            dx_in_perturbed = dx_in_perturbed.replace(qpos=dx_in_perturbed.qpos.at[q_idx+3].set(quat_perturbed[3]))
+            dx_in_perturbed = assign_inplace_quat_pytree(dx_in_perturbed, quat_perturbed, q_idx)
             dx_perturbed = step_fn(dx_in_perturbed, u_in)
             dx_perturbed_array, _ = ravel_pytree(dx_perturbed)
-            return sensitivity_mask * (dx_perturbed_array - dx_out_array) / eps
+            return sensitivity_mask * state_diff(dx_perturbed_array, dx_out_array)
 
         # shape = (len(inner_idx), dx_dim)
         Jx_rows = jax.vmap(fdx_for_index)(inner_idx)
@@ -423,6 +454,7 @@ def make_loss_fn(
             return dx_next, (state_t, cost_t)
 
         dx_final, (states, costs) = jax.lax.scan(scan_body, dx0, U)
+        # costs = costs.at[-1].set(0.)
         total_cost = jnp.sum(costs) + terminal_cost_fn(dx_final)
         return states, total_cost
 
