@@ -10,20 +10,20 @@ from dataclasses import dataclass
 from typing import Optional, Set, Sequence
 from mujoco.mjx._src.types import JointType
 from mujoco.mjx._src.forward import _integrate_pos as integrate_pos
+from mujoco.mjx._src.math import quat_integrate
 from mujoco.mjx._src import math
 from typing import Dict
 from dataclasses import dataclass, field
 
 
 
-def quat_integrate(q: jax.Array, v: jax.Array, dt: jax.Array) -> jax.Array:
-  """Integrates a quaternion given angular velocity and dt."""
-  v, norm_ = normalize_with_norm(v)
-  angle = dt * norm_
-  q_res = axis_angle_to_quat(v, angle)
-  q_res = quat_mul(q, q_res)
-  return normalize(q_res)
-
+# def quat_integrate(q: jax.Array, v: jax.Array, dt: jax.Array) -> jax.Array:
+#   """Integrates a quaternion given angular velocity and dt."""
+#   v, norm_ = normalize_with_norm(v)
+#   angle = dt * norm_
+#   q_res = axis_angle_to_quat(v, angle)
+#   q_res = quat_mul(q, q_res)
+#   return normalize(q_res)
 
 
 def upscale(x):
@@ -80,7 +80,8 @@ class FDCache:
     num_u_dims: int
     eps: float = 1e-6
     # Extra outputs for quaternions
-    quat_idx: Optional[jnp.ndarray] = None       # all free/ball quaternion in global flatten
+    quat_local_idx: Optional[jnp.ndarray] = None       # all free/ball quaternion in global flatten
+    quat_local_init_idx: Optional[jnp.ndarray] = None     
     quat_inner_idx: Optional[jnp.ndarray] = None # subset that also lies in target_fields
     quat_init_idx: Optional[jnp.ndarray] = None
     axes_list: Optional[jnp.ndarray] = None
@@ -218,9 +219,13 @@ def build_fd_cache(
 
     # quat by inner size by 2
     # get befginning indexes of the quats
-    quat_init_idx = jnp.repeat(quat_inner_idx[quat_inner_idx % 4 == 0], 3)
+    quat_init_idx = jnp.repeat(quat_inner_idx[::4],3)
+    quat_local_init_idx = jnp.repeat(quat_idx[::4],3)
+    
+ 
     # FOr each index above,
-    axes_list = jnp.tile(jnp.array([0, 1, 2]), len(quat_inner_idx) // 4)
+    axes_list = jnp.tile(jnp.array([0, 1, 2], dtype=jnp.int32), len(quat_inner_idx) // 4)
+    # axes_list = jnp.array([0,1,2,0,1,2], dtype=jnp.int32)
     # Now vmap over both lists
 
     # ----------------------------------------------------------------
@@ -233,7 +238,8 @@ def build_fd_cache(
         dx_size = dx_size,
         num_u_dims = num_u_dims,
         eps = eps,
-        quat_idx = quat_idx,
+        quat_local_idx = quat_idx,
+        quat_local_init_idx = quat_local_init_idx,
         quat_inner_idx = quat_inner_idx,
         quat_init_idx = quat_init_idx,
         axes_list = axes_list,
@@ -299,7 +305,8 @@ def make_step_fn(
         sensitivity_mask = fd_cache.sensitivity_mask
         inner_idx = fd_cache.inner_idx
         quat_inner_idx = fd_cache.quat_inner_idx
-        quat_idx = fd_cache.quat_idx
+        quat_local_idx = fd_cache.quat_local_idx
+        quat_local_init_idx = fd_cache.quat_local_init_idx
         quat_init_idx = fd_cache.quat_init_idx
         axes_list = fd_cache.axes_list
         num_u_dims = fd_cache.num_u_dims
@@ -336,24 +343,30 @@ def make_step_fn(
             # Only keep relevant dims
             return sensitivity_mask * (dx_perturbed_array - dx_out_array) / eps
 
-        def fdx_for_quat(quat_idx, axe_idx):
-            perturbation = jnp.zeros(3).at[axe_idx].set(1.0)
-            # Integrate qpos with eps
-            quat = quat_integrate(dx_array[quat_idx:quat_idx+4],perturbation, jnp.array([eps]) )
-
-            # step funciton
-
-
-
-        # def diff(dx_perturbed_array, dx_out_array, idx):
-        #     return sensitivity_mask * (dx_perturbed_array - dx_out_array) / eps
-        #
-        # def pos_diff(dx_perturbed_array, dx_out_array):
-        #     return sensitivity_mask * (dx_perturbed_array - dx_out_array) / eps
+        def fdx_for_quat(q_idx, a_idx):
+            """ q_idx is the local index for dx.qpos.
+            """
+            axe_perturbed = jnp.zeros(3).at[a_idx].set(1.0)
+            dx_in_perturbed = dx_in
+            quat_ = jnp.zeros(4)
+            quat_ = quat_.at[0].set(dx_in.qpos[q_idx])
+            quat_ = quat_.at[1].set(dx_in.qpos[q_idx+1])
+            quat_ = quat_.at[2].set(dx_in.qpos[q_idx+2])
+            quat_ = quat_.at[3].set(dx_in.qpos[q_idx+3])
+            quat_perturbed = quat_integrate(quat_, axe_perturbed, jnp.array(eps))
+            dx_in_perturbed = dx_in_perturbed.replace(qpos=dx_in_perturbed.qpos.at[q_idx].set(quat_perturbed[0]))
+            dx_in_perturbed = dx_in_perturbed.replace(qpos=dx_in_perturbed.qpos.at[q_idx+1].set(quat_perturbed[1]))
+            dx_in_perturbed = dx_in_perturbed.replace(qpos=dx_in_perturbed.qpos.at[q_idx+2].set(quat_perturbed[2]))
+            dx_in_perturbed = dx_in_perturbed.replace(qpos=dx_in_perturbed.qpos.at[q_idx+3].set(quat_perturbed[3]))
+            dx_perturbed = step_fn(dx_in_perturbed, u_in)
+            dx_perturbed_array, _ = ravel_pytree(dx_perturbed)
+            return sensitivity_mask * (dx_perturbed_array - dx_out_array) / eps
 
         # shape = (len(inner_idx), dx_dim)
         Jx_rows = jax.vmap(fdx_for_index)(inner_idx)
-
+        # jax.debug.breakpoint()
+        Jxq_rows = jax.vmap(fdx_for_quat)(quat_local_init_idx, axes_list)
+        # jax.debug.breakpoint()
         # -----------------------------------------------------
         # Instead of scattering rows into a (dx_dim, dx_dim) matrix,
         # multiply Jx_rows directly with g_array[inner_idx].
