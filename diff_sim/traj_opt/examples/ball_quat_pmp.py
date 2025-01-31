@@ -3,9 +3,11 @@ import jax
 import jax.numpy as jnp
 import mujoco
 from mujoco import mjx
-from diff_sim.traj_opt.pmp_fd_indexes import build_fd_cache, make_loss_fn, make_step_fn
-from diff_sim.utils.math_helper import sub_quat
-
+from diff_sim.traj_opt.pmp_fd_indexes import build_fd_cache, make_loss_fn, make_step_fn, PMP
+from diff_sim.utils.math_helper import sub_quat,quaternion_conjugate, quaternion_multiply
+from mujoco.mjx._src.math import quat_to_mat 
+jax.config.update("jax_enable_x64", True)
+jax.config.update('jax_default_matmul_precision', 'high')
 
 if __name__ == "__main__":
     # Load mj and mjx model
@@ -26,17 +28,80 @@ if __name__ == "__main__":
         eps=1e-6
     )
     # break out of the main
-    from IPython import embed
-    embed()
-    print(f"quat index: {fd_cache.quat_idx}")
+    # from IPython import embed
+    # embed()
+    # jax.debug.breakpoint()
+    
+    # print(f"quat index: {fd_cache.quat_idx}")
 
-    def running_cost(dx: mjx.Data):
-        # return sub_quat()
-        quat_ref = jnp.array([1., 0., 0., 0.])
-        quat_diff = sub_quat(quat_ref, dx.qpos[3:7])
+
+
+    def skew_to_vector(skew_matrix):
+        """Convert a 3x3 skew-symmetric matrix to a 3D vector (vee operator)."""
+        return jnp.array([skew_matrix[2, 1], skew_matrix[0, 2], skew_matrix[1, 0]])
+
+    def matrix_log(R):
+        # Compute the angle of rotation
+        theta = jnp.arccos((jnp.trace(R) - 1) / 2)
+
+        # Handle the special case where theta is very small (close to zero)
+        # Instead of a conditional, use jnp.where to return a zero matrix when theta is very small
+        return jnp.where(
+            jnp.isclose(theta, 0.),
+            jnp.zeros((3, 3)),  # Return zero matrix if theta is close to 0
+            (theta / (2 * jnp.sin(theta))) * (R - R.T)  # Normal log formula otherwise
+        )
+
+    def rotation_distance(RA, RB):
+        """Compute the geodesic distance between two SO(3) rotation matrices."""
+        relative_rotation = jnp.dot(RA.T, RB)  # Compute RA^T * RB
+        log_relative = matrix_log(relative_rotation)  # Compute matrix logarithm
+        omega = skew_to_vector(log_relative)    # Extract the rotation vector (vee operator)
+        return jnp.linalg.norm(omega)           # Compute the rotation distance
+    
+    def running_cost0(dx: mjx.Data):
+        # Chordal distance : 
+        # it complies with the four metric requirements while being more numerically stable
+        # and simpler than the geodesic distance
+        # https://arxiv.org/pdf/2401.05396
+        costR = jnp.sum((quat_to_mat(dx.qpos[3:7])  - jnp.identity(3))**2)
+
+        # Geodesic distance : Log of the diff in rotation matrix, then skew-symmetric extraction, then norm.
+        # It defines a smooth metric since both the logarithmic map and the Euclidean norm are smooth. 
+        # However, it brings more computational expense and numerical instability 
+        # from the logarithm map for small rotations
+        # Note : Arccos function can be used but will only compute the abs value of the norm, might be problematic to get the 
+        # sign or direction for the gradient.
+        # costR = rotation_distance(quat_to_mat(dx.qpos[3:7]),jnp.identity(3))
+        # R0 = quat_to_mat(quaternion_multiply(quaternion_conjugate(dx.qpos[3:7]), quat_ref))
+        # error = jnp.tanh((jnp.trace(R0) -1)/2)
+        # error = jnp.sum(R0,axis = -1)
+        # error = jnp.arccos((jnp.trace(R0) -1)/2)
+        # error = (R0 - jnp.identity(3))**2
+        # error = jnp.sum((R0)**2)
 
         # return 0.01*jnp.array([jnp.sum(quat_diff**2)]) + 0.00001*dx.qfrc_applied[5]**2
-        return 0.00001 * dx.qfrc_applied[5] ** 2
+        return 0.001*costR + 0.00001*dx.qfrc_applied[5]**2
+        # return 0.00001 * dx.qfrc_applied[5] ** 2
+
+    
+    @jax.custom_vjp
+    def clip_gradient(lo, hi, x):
+        return x  # identity function
+
+    def clip_gradient_fwd(lo, hi, x):
+        return x, (lo, hi)  # save bounds as residuals
+
+    def clip_gradient_bwd(res, g):
+        lo, hi = res
+        return (None, None, jnp.clip(g, lo, hi))  # use None to indicate zero cotangents for lo and hi
+
+    clip_gradient.defvjp(clip_gradient_fwd, clip_gradient_bwd)
+    
+    def running_cost(dx: mjx.Data):
+        cost = running_cost0(dx)
+        cost = clip_gradient(-1., 1., cost)
+        return cost
 
     def terminal_cost(dx: mjx.Data):
         return running_cost(dx)
@@ -53,18 +118,22 @@ if __name__ == "__main__":
 
     idata = mujoco.MjData(model)
     qx0, qz0, qx1 = -0., 0.25, -0.2  # Inititial positions
-    idata.qpos[0], idata.qpos[2], idata.qpos[7] = qx0, qz0, qx1
+    # idata.qpos[0], idata.qpos[2], idata.qpos[7] = qx0, qz0, qx1
+    idata.qpos[0], idata.qpos[2]= qx0, qz0
     Nlength = 40
 
-    u0 = jnp.ones(Nlength) * 0.002
+    u0 = jnp.ones(Nlength) * 0.0009
     u0 = jnp.expand_dims(u0, 1)
     qpos = jnp.array(idata.qpos)
     loss = make_loss_fn(mx, qpos, set_control, running_cost, terminal_cost, fd_cache)
-    l, x = loss(u0)
-    dldu = compute_loss_grad(u0)
+    # l, x = loss(u0)
+    # dldu = compute_loss_grad(u0)
+    # print("Loss: ", l)
+    # print("DlDu: ", dldu)
 
-    print("Loss: ", l)
-    print("DlDu: ", dldu)
+    pmp = PMP(loss=lambda x: loss(x)[0])
+    optimal_U = pmp.solve(U0=u0, learning_rate=0.000001, max_iter=50)
+    l, x = loss(optimal_U)
 
     from diff_sim.utils.mj import visualise_traj_generic
     visualise_traj_generic(jnp.expand_dims(x, axis=0), idata, model, sleep=0.1)
