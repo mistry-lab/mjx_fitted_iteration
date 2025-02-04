@@ -62,12 +62,12 @@ if __name__ == "__main__":
         return jnp.linalg.norm(omega)           # Compute the rotation distance
     
     def running_cost0(dx: mjx.Data):
-        quat_ref =   axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
+        quat_ref =   axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([-2.35]))
         # Chordal distance : 
         # it complies with the four metric requirements while being more numerically stable
         # and simpler than the geodesic distance
         # https://arxiv.org/pdf/2401.05396
-        # costR = jnp.sum((quat_to_mat(dx.qpos[3:7])  - quat_to_mat(quat_ref))**2)
+        costR = jnp.sum((quat_to_mat(dx.qpos[3:7])  - quat_to_mat(quat_ref))**2)
 
         # Geodesic distance : Log of the diff in rotation matrix, then skew-symmetric extraction, then norm.
         # It defines a smooth metric since both the logarithmic map and the Euclidean norm are smooth. 
@@ -75,7 +75,7 @@ if __name__ == "__main__":
         # from the logarithm map for small rotations
         # Note : Arccos function can be used but will only compute the abs value of the norm, might be problematic to get the 
         # sign or direction for the gradient.
-        costR = rotation_distance(quat_to_mat(dx.qpos[3:7]),quat_to_mat(quat_ref))
+        # costR = rotation_distance(quat_to_mat(dx.qpos[3:7]),quat_to_mat(quat_ref))
         # R0 = quat_to_mat(quaternion_multiply(quaternion_conjugate(dx.qpos[3:7]), quat_ref))
         # error = jnp.tanh((jnp.trace(R0) -1)/2)
         # error = jnp.sum(R0,axis = -1)
@@ -84,7 +84,7 @@ if __name__ == "__main__":
         # error = jnp.sum((R0)**2)
 
         # return 0.01*jnp.array([jnp.sum(quat_diff**2)]) + 0.00001*dx.qfrc_applied[5]**2
-        return 0.001*costR + 0.*dx.qfrc_applied[5]**2
+        return 0.001*costR + 0.000001*dx.qfrc_applied[5]**2 + 0.000001*dx.qvel[5]**2
         # return 0.00001 * dx.qfrc_applied[5] ** 2
 
     
@@ -103,11 +103,11 @@ if __name__ == "__main__":
     
     def running_cost(dx: mjx.Data):
         cost = running_cost0(dx)
-        cost = clip_gradient(-1., 1., cost)
+        # cost = clip_gradient(-1., 1., cost)
         return cost
 
     def terminal_cost(dx: mjx.Data):
-        return running_cost(dx)
+        return 10*running_cost(dx)
 
     def set_control(dx, u):
         dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[5].set(u[0]))
@@ -125,64 +125,65 @@ if __name__ == "__main__":
     idata.qpos[0], idata.qpos[2]= qx0, qz0
     Nlength = 15
 
-    u0 = jnp.ones(Nlength) * 0.01
-    u0 = jnp.expand_dims(u0, 1)
+    u0 = jnp.ones((Nlength,1)) * 0.001
     qpos = jnp.array(idata.qpos)
     loss = make_loss_fn(mx, qpos, set_control, running_cost, terminal_cost, fd_cache)
-    # l, x = loss(u0)
-    # dldu = compute_loss_grad(u0)
-    # print("Loss: ", l)
-    # print("DlDu: ", dldu)
+    l, x = loss(u0)
+    dldu = compute_loss_grad(u0)
+    print("Loss: ", l)
+    print("DlDu: ", dldu)
 
     pmp = PMP(loss=lambda x: loss(x)[0])
-    optimal_U = pmp.solve(U0=u0, learning_rate=0.001, max_iter=200)
+    optimal_U = pmp.solve(U0=u0, learning_rate=0.0005, max_iter=100)
     l, x = loss(optimal_U)
-
+    # # 
     from diff_sim.utils.mj import visualise_traj_generic
     visualise_traj_generic(jnp.expand_dims(x, axis=0), idata, model, sleep=0.1)
+
+    # def wrap_angle(angle):
+    #     # Wraps angle to the interval [-pi, pi]
+    #     return ((angle + jnp.pi) % (2 * jnp.pi)) - jnp.pi
+
+    # # Debug the cost function
+    # def f(u):
+    #     quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
+    #     quat0 = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([u]))
+    #     # Apply modulo
+    #     costR = rotation_distance(quat_to_mat(quat0),quat_to_mat(quat_ref))  # Log
+    #     # costR = jnp.sum((quat_to_mat(quat0)  - quat_to_mat(quat_ref))**2)  # Sum
+    #     return costR
+
+    # def f2(u):
+    #     quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
+    #     quat0 = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([wrap_angle(u)]))
+
+    #     costR = jnp.sum((quat_to_mat(quat0)  - quat_to_mat(quat_ref))**2)
+    #     return costR
     
 
+    # import matplotlib.pyplot as plt
+    # import numpy as np
 
-    # Debug the cost function
-    def f(u):
-        quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
-        quat0 = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([u]))
-        costR = rotation_distance(quat_to_mat(quat0),quat_to_mat(quat_ref))  # Log
-        # costR = jnp.sum((quat_to_mat(quat0)  - quat_to_mat(quat_ref))**2)  # Sum
-        return costR
+    # fd_1 = jax.jacrev(f)
+    # fd_2 = jax.jacrev(f2)
 
-    def f2(u):
-        quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
-        quat0 = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([u]))
-        costR = jnp.sum((quat_to_mat(quat0)  - quat_to_mat(quat_ref))**2)
-        return costR
-    
+    # T = np.linspace(-6., 6.,100)
+    # X = [f(t) for t in T]
+    # X2 = [f2(t) for t in T]
 
-    import matplotlib.pyplot as plt
-    import numpy as np
+    # Xd = [fd_1(t) for t in T]
+    # Xd_2 = [fd_2(t) for t in T]
 
-    fd_1 = jax.jacrev(f)
-    fd_2 = jax.jacrev(f2)
+    # ax = plt.subplot(2,1,1)
+    # ax.plot(T,X,label="Log cost")
+    # ax.plot(T,X2,label="Diff cost")
+    # ax.legend()
 
-    plt.figure()
+    # ax = plt.subplot(2,1,2)
+    # ax.plot(T,Xd,label="Grad Log cost")
+    # ax.plot(T,Xd_2,label="Grad Diff cost")
+    # ax.legend()
 
-    T = np.linspace(-6., 6.,100)
-    X = [f(t) for t in T]
-    X2 = [f2(t) for t in T]
-
-    Xd = [fd_1(t) for t in T]
-    Xd_2 = [fd_2(t) for t in T]
-
-    ax = plt.subplot(2,1,1)
-    ax.plot(T,X,label="Log cost")
-    ax.plot(T,X2,label="Diff cost")
-    ax.legend()
-
-    ax = plt.subplot(2,1,2)
-    ax.plot(T,Xd,label="Grad Log cost")
-    ax.plot(T,Xd_2,label="Grad Diff cost")
-    ax.legend()
-
-    plt.show()
+    # plt.show()
 
 
