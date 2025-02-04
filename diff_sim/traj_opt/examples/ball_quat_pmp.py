@@ -62,7 +62,7 @@ if __name__ == "__main__":
         return jnp.linalg.norm(omega)           # Compute the rotation distance
     
     def running_cost0(dx: mjx.Data):
-        quat_ref =   axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([-2.35]))
+        quat_ref =   axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
         # Chordal distance : 
         # it complies with the four metric requirements while being more numerically stable
         # and simpler than the geodesic distance
@@ -120,21 +120,21 @@ if __name__ == "__main__":
         return ad_grad
 
     idata = mujoco.MjData(model)
-    qx0, qz0, qx1 = -0., 0.25, -0.2  # Inititial positions
-    # idata.qpos[0], idata.qpos[2], idata.qpos[7] = qx0, qz0, qx1
-    idata.qpos[0], idata.qpos[2]= qx0, qz0
-    Nlength = 15
+    qx0, qz0, qx1, qz1 = -0., 0.25, -0.2,  0.1 # Inititial positions
+    idata.qpos[0], idata.qpos[2], idata.qpos[7] = qx0, qz0, qx1
+    # idata.qpos[0], idata.qpos[2]= qx0, qz0
+    Nlength = 100
 
     u0 = jnp.ones((Nlength,1)) * 0.001
     qpos = jnp.array(idata.qpos)
     loss = make_loss_fn(mx, qpos, set_control, running_cost, terminal_cost, fd_cache)
-    l, x = loss(u0)
-    dldu = compute_loss_grad(u0)
-    print("Loss: ", l)
-    print("DlDu: ", dldu)
+    # l, x = loss(u0)
+    # dldu = compute_loss_grad(u0)
+    # print("Loss: ", l)
+    # print("DlDu: ", dldu)
 
     pmp = PMP(loss=lambda x: loss(x)[0])
-    optimal_U = pmp.solve(U0=u0, learning_rate=0.0005, max_iter=100)
+    optimal_U = pmp.solve(U0=u0, learning_rate=0.00009, max_iter=100)
     l, x = loss(optimal_U)
     # # 
     from diff_sim.utils.mj import visualise_traj_generic

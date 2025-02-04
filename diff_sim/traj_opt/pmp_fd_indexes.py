@@ -372,6 +372,7 @@ def make_step_fn(
 
         def state_diff(array0, array1):
             vels = diff_quat_vmap(array0, array1,quat_inner_init_idx_norep)
+            # jax.debug.print("vels : {}", vels)
             diff_array = array0 - array1  
             diff_array, _ = jax.lax.scan(assign_inplace_quat_array, diff_array, (vels, quat_inner_init_idx_norep))
             diff_array = diff_array / eps
@@ -388,7 +389,6 @@ def make_step_fn(
             return sensitivity_mask * state_diff(dx_perturbed_array, dx_out_array)
 
         # shape = (num_u_dims, dx_dim)
-        Ju_array = jax.vmap(fdu_plus)(jnp.arange(num_u_dims))
 
         # =====================================================
         # ================ FD wrt state (dx) ==================
@@ -421,9 +421,13 @@ def make_step_fn(
             X_padded = X_padded.at[idxs].set(X) # update padded with original values
             return X_padded
 
+        Ju_array = jax.vmap(fdu_plus)(jnp.arange(num_u_dims))
+        # jax.debug.print("------")
         Jx_rows = jax.vmap(fdx_for_index)(inner_idx)
+        # jax.debug.print("------")
         Jxq_rows = jax.vmap(fdx_for_quat)(quat_local_init_idx, axes_list)
         Jxq_rows = insert_zeros_every_4_rows(Jxq_rows)
+        
         # -----------------------------------------------------
         # Instead of scattering rows into a (dx_dim, dx_dim) matrix,
         # multiply Jx_rows directly with g_array[inner_idx].
@@ -455,12 +459,14 @@ def make_step_fn(
         d_x = unravel_dx(d_x_flat)
         
         # jax.debug.print("\n\n")
-        # vel_index = jnp.array([16,17,18,19,20,21,22,23,24,25,26,27])
+        # # vel_index = jnp.array([16,17,18,19,20,21,22,23,24,25,26,27])
         # jax.debug.print("Sum d_x_flat {} : ", jnp.sum(d_x_flat))
         # jax.debug.print("Sum quat {} : ", jnp.sum(d_x_flat_q_sub**2))
+        # # custom_debug_print("Jx_rows {} : ", Jx_rows[:, inner_full_idx])
         # custom_debug_print("Sum d_u {} : ", jnp.sum(d_u))
         # custom_debug_print("Ju_array {} : ", Ju_array[:,inner_full_idx])
         # custom_debug_print("g_array {} : ", g_array[inner_full_idx])
+        # jax.debug.breakpoint()
         
         return (d_x, d_u)
 
