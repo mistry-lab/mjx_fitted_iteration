@@ -37,9 +37,12 @@ if __name__ == "__main__":
         return dx.replace(ctrl=dx.ctrl.at[:].set(u))
 
     # 2) Precompute flatten/unflatten + sensitivity info
-    unravel_dx, inner_idx, sensitivity_mask = prepare_sensitivity(
-        dx,
-        target_fields={'qpos','qvel','ctrl'}
+    fd_cache = build_fd_cache(
+        mx,
+        dx_ref,
+        target_fields={"qpos", "qvel", "ctrl"},
+        ctrl_dim=1,
+        eps=1e-6
     )
 
     # 3) Build the loss function with the new step fn

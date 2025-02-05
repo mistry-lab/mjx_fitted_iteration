@@ -31,7 +31,7 @@ if __name__ == "__main__":
     # from IPython import embed
     # embed()
     # jax.debug.breakpoint()
-    
+
     # print(f"quat index: {fd_cache.quat_idx}")
 
 
@@ -45,7 +45,7 @@ if __name__ == "__main__":
             # Compute the angle of rotation
             theta = jnp.arccos((jnp.trace(R) - 1) / 2)
             return (theta / (2 * jnp.sin(theta))) * (R - R.T)  # Normal log formula otherwise
-        
+
         # Handle the special case where theta is very small (close to zero)
         # Instead of a conditional, use jnp.where to return a zero matrix when theta is very small
         return jnp.where(
@@ -60,20 +60,20 @@ if __name__ == "__main__":
         log_relative = matrix_log(relative_rotation)  # Compute matrix logarithm
         omega = skew_to_vector(log_relative)    # Extract the rotation vector (vee operator)
         return jnp.linalg.norm(omega)           # Compute the rotation distance
-    
+
     def running_cost0(dx: mjx.Data):
         quat_ref =   axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
-        # Chordal distance : 
+        # Chordal distance :
         # it complies with the four metric requirements while being more numerically stable
         # and simpler than the geodesic distance
         # https://arxiv.org/pdf/2401.05396
         costR = jnp.sum((quat_to_mat(dx.qpos[3:7])  - quat_to_mat(quat_ref))**2)
 
         # Geodesic distance : Log of the diff in rotation matrix, then skew-symmetric extraction, then norm.
-        # It defines a smooth metric since both the logarithmic map and the Euclidean norm are smooth. 
-        # However, it brings more computational expense and numerical instability 
+        # It defines a smooth metric since both the logarithmic map and the Euclidean norm are smooth.
+        # However, it brings more computational expense and numerical instability
         # from the logarithm map for small rotations
-        # Note : Arccos function can be used but will only compute the abs value of the norm, might be problematic to get the 
+        # Note : Arccos function can be used but will only compute the abs value of the norm, might be problematic to get the
         # sign or direction for the gradient.
         # costR = rotation_distance(quat_to_mat(dx.qpos[3:7]),quat_to_mat(quat_ref))
         # R0 = quat_to_mat(quaternion_multiply(quaternion_conjugate(dx.qpos[3:7]), quat_ref))
@@ -87,7 +87,7 @@ if __name__ == "__main__":
         return 0.001*costR + 0.000001*dx.qfrc_applied[5]**2 + 0.000001*dx.qvel[5]**2
         # return 0.00001 * dx.qfrc_applied[5] ** 2
 
-    
+
     @jax.custom_vjp
     def clip_gradient(lo, hi, x):
         return x  # identity function
@@ -100,7 +100,7 @@ if __name__ == "__main__":
         return (None, None, jnp.clip(g, lo, hi))  # use None to indicate zero cotangents for lo and hi
 
     clip_gradient.defvjp(clip_gradient_fwd, clip_gradient_bwd)
-    
+
     def running_cost(dx: mjx.Data):
         cost = running_cost0(dx)
         # cost = clip_gradient(-1., 1., cost)
@@ -125,7 +125,7 @@ if __name__ == "__main__":
     # idata.qpos[0], idata.qpos[2]= qx0, qz0
     Nlength = 100
 
-    u0 = jnp.ones((Nlength,1)) * 0.001
+    u0 = jnp.ones((Nlength, 1)) * 0.001
     qpos = jnp.array(idata.qpos)
     loss = make_loss_fn(mx, qpos, set_control, running_cost, terminal_cost, fd_cache)
     # l, x = loss(u0)
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     pmp = PMP(loss=lambda x: loss(x)[0])
     optimal_U = pmp.solve(U0=u0, learning_rate=0.00009, max_iter=100)
     l, x = loss(optimal_U)
-    # # 
+    # #
     from diff_sim.utils.mj import visualise_traj_generic
     visualise_traj_generic(jnp.expand_dims(x, axis=0), idata, model, sleep=0.1)
 
