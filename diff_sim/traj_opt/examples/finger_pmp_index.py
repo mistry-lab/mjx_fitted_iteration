@@ -7,7 +7,7 @@ import mujoco
 from mujoco import mjx
 from diff_sim.traj_opt.pmp_fd_indexes import PMP, make_loss_fn, build_fd_cache
 from diff_sim.utils.mj import visualise_traj_generic
-
+from mujoco.mjx._src.math import quat_to_mat, axis_angle_to_quat, quat_to_axis_angle
 
 def upscale(x):
     """Convert data to 64-bit precision."""
@@ -24,25 +24,34 @@ if __name__ == "__main__":
     dx = mjx.make_data(mx)
     dx = jax.tree.map(upscale, dx)
     d = mujoco.MjData(model)
-    qpos_init = jnp.array([-.8, 0, -.8])
+    # qpos_init = jnp.array([-.8, 0, -.8])
+
+    qpos_init = jnp.concatenate([jnp.array([-0.8, 0.0]), axis_angle_to_quat(jnp.array([0., 1., 0.]), jnp.array([0.8]))])
     d.qpos = np.array(qpos_init)
-    Nsteps, nu = 300, 2
+    Nsteps, nu = 300, 1
     #make random control sequence
-    U0 = jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 2 * 0.2
+    U0 = jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 0.4
     def running_cost(dx):
-        pos_finger = dx.qpos[2]
-        u = dx.ctrl
-        return 0.002 * jnp.sum(u ** 2) + 0.001 * pos_finger ** 2
+        # pos_finger = dx.qpos[2]
+        # jax.debug.print("angle {p}", p = pos_finger)
+        # jax.debug.print(f"quat of angle")
+        # quat_ref = axis_angle_to_quat(jnp.array([0., 1., 0.]), jnp.array([0.]))
+        # costR = jnp.sum((quat_to_mat(dx.qpos[2:6]) - quat_to_mat(quat_ref)) ** 2)
+        angle = quat_to_axis_angle(dx.qpos[2:6])[1]
+        # jax.debug.print("angle {p}", p=angle)
+        u = dx.qfrc_applied[3]
+        return 0.0 * jnp.sum(u ** 2) + 0.001 * (angle ** 2)
 
     def terminal_cost(dx):
-        pos_finger = dx.qpos[2]
-        return 4 * pos_finger ** 2
+        # pos_finger = dx.qpos[2]
+        angle = quat_to_axis_angle(dx.qpos[2:6])[1]
+        return 4 * (angle ** 2)
 
     def set_control(dx, u):
-        return dx.replace(ctrl=dx.ctrl.at[:].set(u))
+        return dx.replace(qfrc_applied=dx.qfrc_applied.at[3].set(u[0]))
 
     fd_cache = build_fd_cache(
-        mx, dx, ('qpos', 'qvel', 'ctrl'), mx.nu
+        mx, dx, ('qpos', 'qvel', 'ctrl'), 1
     )
 
     # 3) Build the loss function with the new step fn
@@ -55,11 +64,12 @@ if __name__ == "__main__":
         fd_cache=fd_cache,
     )
 
-
     l, x = loss_fn(U0)
+    visualise_traj_generic(jnp.expand_dims(x, axis=0), d, model)
+    print("Initial loss: ", l)
     # 4) Optimize
     pmp = PMP(loss=lambda u: loss_fn(u)[0])
-    optimal_U = pmp.solve(U0=U0, learning_rate=0.5, max_iter=50)
+    optimal_U = pmp.solve(U0=U0, learning_rate=0.09, max_iter=50)
 
     l, x = loss_fn(optimal_U)
 
