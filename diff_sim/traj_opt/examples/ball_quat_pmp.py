@@ -23,7 +23,7 @@ if __name__ == "__main__":
     fd_cache = build_fd_cache(
         mx,
         dx_ref,
-        target_fields={"qpos", "qvel", "ctrl"},
+        target_fields={"qpos", "qvel"},
         ctrl_dim=1,
         eps=1e-6
     )
@@ -62,12 +62,12 @@ if __name__ == "__main__":
         return jnp.linalg.norm(omega)           # Compute the rotation distance
 
     def running_cost0(dx: mjx.Data):
-        quat_ref =   axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
+        quat_ref =   axis_angle_to_quat(jnp.array([0.,1.,0.]), jnp.array([2.35]))
         # Chordal distance :
         # it complies with the four metric requirements while being more numerically stable
         # and simpler than the geodesic distance
         # https://arxiv.org/pdf/2401.05396
-        costR = jnp.sum((quat_to_mat(dx.qpos[3:7])  - quat_to_mat(quat_ref))**2)
+        costR = jnp.sum((quat_to_mat(dx.qpos[0:4])  - quat_to_mat(quat_ref))**2)
 
         # Geodesic distance : Log of the diff in rotation matrix, then skew-symmetric extraction, then norm.
         # It defines a smooth metric since both the logarithmic map and the Euclidean norm are smooth.
@@ -84,7 +84,7 @@ if __name__ == "__main__":
         # error = jnp.sum((R0)**2)
 
         # return 0.01*jnp.array([jnp.sum(quat_diff**2)]) + 0.00001*dx.qfrc_applied[5]**2
-        return 0.001*costR + 0.000001*dx.qfrc_applied[5]**2 + 0.000001*dx.qvel[5]**2
+        return 0.001*costR + 0.000001*dx.qfrc_applied[2]**2 + 0.000001*dx.qvel[2]**2
         # return 0.00001 * dx.qfrc_applied[5] ** 2
 
 
@@ -110,7 +110,7 @@ if __name__ == "__main__":
         return 10*running_cost(dx)
 
     def set_control(dx, u):
-        dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[5].set(u[0]))
+        dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[1].set(u[0]))
         return dx
 
     @jax.jit
@@ -120,8 +120,7 @@ if __name__ == "__main__":
         return ad_grad
 
     idata = mujoco.MjData(model)
-    qx0, qz0, qx1, qz1 = -0., 0.25, -0.2,  0.1 # Inititial positions
-    idata.qpos[0], idata.qpos[2], idata.qpos[7] = qx0, qz0, qx1
+    # qx0, qz0, qx1, qz1 = -0., 0.25, -0.2,  0.1s7] = qx0, qz0, qx1
     # idata.qpos[0], idata.qpos[2]= qx0, qz0
     Nlength = 100
 

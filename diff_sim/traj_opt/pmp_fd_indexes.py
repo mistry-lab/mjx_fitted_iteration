@@ -51,7 +51,7 @@ def build_fd_cache(
          so 'inner_idx' contains only non-quaternion states.
     """
     if target_fields is None:
-        target_fields = {"qpos", "qvel", "ctrl"}
+        target_fields = {"qpos", "qvel"}
 
     # Flatten dx_ref
     dx_array, unravel_dx = ravel_pytree(dx_ref)
@@ -305,10 +305,7 @@ def make_step_fn(
             diff_array = array0 - array1
             return diff_array/eps
 
-        if dx_flat_quat_idx.size != 0:
-            state_diff = state_diff_quat
-        else:
-            state_diff = state_diff_no_quat
+        state_diff = state_diff_no_quat if dx_flat_quat_idx.size == 0 else state_diff_quat
 
         # =====================================================
         # =============== FD wrt control (u) ==================
@@ -319,8 +316,6 @@ def make_step_fn(
             dx_perturbed = step_fn(dx_in, u_in_eps)
             dx_perturbed_array, _ = ravel_pytree(dx_perturbed)
             return sensitivity_mask * state_diff(dx_perturbed_array, dx_out_array)
-
-        # shape = (num_u_dims, dx_dim)
 
         # =====================================================
         # ================ FD wrt state (dx) ==================
@@ -351,17 +346,14 @@ def make_step_fn(
             X_padded = X_padded.at[idxs].set(X) # update padded with original values
             return X_padded
 
-        Ju_array = jax.vmap(fdu_plus)(jnp.arange(num_u_dims))
-        Jx_rows = jax.vmap(fdx_for_index)(dx_flat_no_quat_idx)
-
-
         def scatter_rows(subset_rows, subset_indices, full_shape, base=None):
             if base is None:
                 base = jnp.zeros(full_shape, dtype=subset_rows.dtype)
             return base.at[subset_indices].set(subset_rows)
 
         dx_dim = dx_array.size
-
+        Ju_array = jax.vmap(fdu_plus)(jnp.arange(num_u_dims))
+        Jx_rows = jax.vmap(fdx_for_index)(dx_flat_no_quat_idx)
         d_x_flat_sub = Jx_rows[:, dx_flat_all_idx] @ g_array[dx_flat_all_idx]
         d_x_flat = scatter_rows(d_x_flat_sub, dx_flat_no_quat_idx, (dx_dim,)) # inner_idx : qithout quaternions
 
@@ -373,6 +365,10 @@ def make_step_fn(
 
         d_u = Ju_array[:, dx_flat_all_idx] @ g_array[dx_flat_all_idx]
         d_x = unravel_dx(d_x_flat)
+
+        # jax.debug.print("\n\ng_array_full: {val1}", val1=g_array[dx_flat_all_idx])
+        # # jax.debug.print("Ju_array_quat: {val1}", val1=Ju_array[:, dx_flat_quat_idx])
+        # jax.debug.print("Ju_array_quat_full: {val1}", val1=Ju_array[:, dx_flat_all_idx])
 
         return (d_x, d_u)
 

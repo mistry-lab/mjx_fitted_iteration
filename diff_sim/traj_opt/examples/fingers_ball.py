@@ -23,7 +23,7 @@ if __name__ == "__main__":
     fd_cache = build_fd_cache(
         mx,
         dx_ref,
-        target_fields={"qpos", "qvel", "ctrl"},
+        target_fields={"qpos", "qvel"},
         ctrl_dim=mx.nu,
         eps=1e-6
     )
@@ -88,8 +88,8 @@ if __name__ == "__main__":
     Nlength = 200
 
     u0 = 0.5 * jax.random.normal(jax.random.PRNGKey(0), (Nlength, 4))
-    u0 = u0.at[:, 0].set(0.5)
-    u0 = u0.at[:, 2].set(-0.5)
+    u0 = u0.at[:, 0].set(0.1)
+    u0 = u0.at[:, 2].set(-0.1)
     u0 = u0.at[:, 3].set(0.)
     u0 = u0.at[:, 1].set(0.)
     qpos = jnp.array(idata.qpos)
