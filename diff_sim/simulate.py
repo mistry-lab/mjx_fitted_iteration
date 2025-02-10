@@ -214,6 +214,7 @@ def controlled_simulate(dxs:mjx.Data, ctx: Context, net: Network, key: jnp.ndarr
         costs = jnp.concatenate([costs, zeros.reshape(-1)], axis=0)
 
         # Mask the gradients of the costs that are after the termination
+
         termination_mask = jnp.concatenate([
             jnp.array([False]),  # Ignore the first cost
             jnp.cumsum(terminated) > 0  # True from first termination onward
