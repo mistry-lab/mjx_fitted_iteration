@@ -1,11 +1,9 @@
-import os
 import jax
 import jax.numpy as jnp
 import mujoco
 from mujoco import mjx
-from diff_sim.traj_opt.pmp_fd_indexes import build_fd_cache, make_loss_fn, make_step_fn, PMP
-from diff_sim.utils.math_helper import sub_quat,quaternion_conjugate, quaternion_multiply
-from mujoco.mjx._src.math import quat_to_mat, axis_angle_to_quat, quat_to_axis_angle
+from diff_sim.traj_opt.pmp_fd_indexes import build_fd_cache, make_loss_fn, PMP
+from mujoco.mjx._src.math import quat_to_mat, axis_angle_to_quat
 jax.config.update("jax_enable_x64", True)
 jax.config.update('jax_default_matmul_precision', 'high')
 
@@ -27,13 +25,6 @@ if __name__ == "__main__":
         ctrl_dim=1,
         eps=1e-6
     )
-    # break out of the main
-    # from IPython import embed
-    # embed()
-    # jax.debug.breakpoint()
-
-    # print(f"quat index: {fd_cache.quat_idx}")
-
 
 
     def skew_to_vector(skew_matrix):
@@ -88,22 +79,8 @@ if __name__ == "__main__":
         # return 0.00001 * dx.qfrc_applied[5] ** 2
 
 
-    @jax.custom_vjp
-    def clip_gradient(lo, hi, x):
-        return x  # identity function
-
-    def clip_gradient_fwd(lo, hi, x):
-        return x, (lo, hi)  # save bounds as residuals
-
-    def clip_gradient_bwd(res, g):
-        lo, hi = res
-        return (None, None, jnp.clip(g, lo, hi))  # use None to indicate zero cotangents for lo and hi
-
-    clip_gradient.defvjp(clip_gradient_fwd, clip_gradient_bwd)
-
     def running_cost(dx: mjx.Data):
         cost = running_cost0(dx)
-        # cost = clip_gradient(-1., 1., cost)
         return cost
 
     def terminal_cost(dx: mjx.Data):
@@ -127,62 +104,12 @@ if __name__ == "__main__":
     u0 = jnp.ones((Nlength, 1)) * 0.001
     qpos = jnp.array(idata.qpos)
     loss = make_loss_fn(mx, qpos, set_control, running_cost, terminal_cost, fd_cache)
-    # l, x = loss(u0)
-    # dldu = compute_loss_grad(u0)
-    # print("Loss: ", l)
-    # print("DlDu: ", dldu)
+    l, x = loss(u0)
+    print("Loss: ", l)
 
     pmp = PMP(loss=lambda x: loss(x)[0])
     optimal_U = pmp.solve(U0=u0, learning_rate=0.00009, max_iter=100)
     l, x = loss(optimal_U)
-    # #
-    from diff_sim.utils.mj import visualise_traj_generic
+
+    from diff_sim.utils.mj_viewers import visualise_traj_generic
     visualise_traj_generic(jnp.expand_dims(x, axis=0), idata, model, sleep=0.1)
-
-    # def wrap_angle(angle):
-    #     # Wraps angle to the interval [-pi, pi]
-    #     return ((angle + jnp.pi) % (2 * jnp.pi)) - jnp.pi
-
-    # # Debug the cost function
-    # def f(u):
-    #     quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
-    #     quat0 = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([u]))
-    #     # Apply modulo
-    #     costR = rotation_distance(quat_to_mat(quat0),quat_to_mat(quat_ref))  # Log
-    #     # costR = jnp.sum((quat_to_mat(quat0)  - quat_to_mat(quat_ref))**2)  # Sum
-    #     return costR
-
-    # def f2(u):
-    #     quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
-    #     quat0 = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([wrap_angle(u)]))
-
-    #     costR = jnp.sum((quat_to_mat(quat0)  - quat_to_mat(quat_ref))**2)
-    #     return costR
-    
-
-    # import matplotlib.pyplot as plt
-    # import numpy as np
-
-    # fd_1 = jax.jacrev(f)
-    # fd_2 = jax.jacrev(f2)
-
-    # T = np.linspace(-6., 6.,100)
-    # X = [f(t) for t in T]
-    # X2 = [f2(t) for t in T]
-
-    # Xd = [fd_1(t) for t in T]
-    # Xd_2 = [fd_2(t) for t in T]
-
-    # ax = plt.subplot(2,1,1)
-    # ax.plot(T,X,label="Log cost")
-    # ax.plot(T,X2,label="Diff cost")
-    # ax.legend()
-
-    # ax = plt.subplot(2,1,2)
-    # ax.plot(T,Xd,label="Grad Log cost")
-    # ax.plot(T,Xd_2,label="Grad Diff cost")
-    # ax.legend()
-
-    # plt.show()
-
-

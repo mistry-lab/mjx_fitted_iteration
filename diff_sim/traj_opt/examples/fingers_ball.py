@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import mujoco
 from mujoco import mjx
-from diff_sim.utils.mj import visualise_traj_generic
+from diff_sim.utils.mj_viewers import visualise_traj_generic
 from diff_sim.traj_opt.pmp_fd_indexes import build_fd_cache, make_loss_fn, make_step_fn, PMP
 from diff_sim.utils.math_helper import sub_quat,quaternion_conjugate, quaternion_multiply
 from mujoco.mjx._src.math import quat_to_mat, axis_angle_to_quat, quat_to_axis_angle

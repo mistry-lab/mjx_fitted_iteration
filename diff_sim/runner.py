@@ -14,8 +14,8 @@ import jax.numpy as jnp
 import contextlib  # Added for handling headless mode
 from diff_sim.context.tasks import ctxs
 from diff_sim.utils.tqdm import trange
-from diff_sim.utils.mj import visualise_policy, visualise_traj
-from diff_sim.utils.generic import save_model
+from diff_sim.utils.mj_viewers import visualise_policy, visualise_traj
+from diff_sim.utils.generic_helpers import save_model
 from diff_sim.utils.mj_data_manager import create_data_manager
 from diff_sim.simulate import controlled_simulate, controlled_simulate_fd
 

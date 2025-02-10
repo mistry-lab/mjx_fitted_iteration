@@ -196,6 +196,6 @@ if __name__ == "__main__":
     )
 
     # visualize the trajectories
-    from diff_sim.utils.mj import visualise_traj_generic
+    from diff_sim.utils.mj_viewers import visualise_traj_generic
     data = mujoco.MjData(model)
     visualise_traj_generic(jnp.array(states_batched[:,:,:-1]), data, model)

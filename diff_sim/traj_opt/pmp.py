@@ -6,8 +6,6 @@ from jax import config
 from dataclasses import dataclass
 from typing import Callable
 
-from numpy.ma.core import inner
-
 config.update('jax_default_matmul_precision', 'high')
 config.update("jax_enable_x64", True)
 

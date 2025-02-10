@@ -1,6 +1,5 @@
 import jax
 import jax.numpy as jnp
-import mujoco
 from mujoco import mjx
 import equinox
 from typing import Callable

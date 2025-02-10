@@ -1,7 +1,6 @@
 import jax
 import jax.numpy as jnp
 import equinox as eqx
-from typing import Callable, Tuple
 from mujoco import mjx
 from jax import lax
 

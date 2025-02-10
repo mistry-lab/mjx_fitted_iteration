@@ -52,7 +52,7 @@ if __name__ == "__main__":
     optimizer = ILQR(ilqr_step=ilqr_step)
     U_opt, cost = optimizer.solve(U0, max_iter=50)
 
-    from diff_sim.utils.mj import visualise_traj_generic
+    from diff_sim.utils.mj_viewers import visualise_traj_generic
 
     d = mujoco.MjData(model)
     x, _, _ = simulate_trajectory_ilqr(mx, qpos_init, set_control, running_cost, terminal_cost, U_opt)

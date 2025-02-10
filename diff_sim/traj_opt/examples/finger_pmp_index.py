@@ -6,7 +6,7 @@ jax.config.update('jax_default_matmul_precision', 'high')
 import mujoco
 from mujoco import mjx
 from diff_sim.traj_opt.pmp_fd_indexes import PMP, make_loss_fn, build_fd_cache
-from diff_sim.utils.mj import visualise_traj_generic
+from diff_sim.utils.mj_viewers import visualise_traj_generic
 from mujoco.mjx._src.math import quat_to_mat, axis_angle_to_quat, quat_to_axis_angle
 
 def upscale(x):

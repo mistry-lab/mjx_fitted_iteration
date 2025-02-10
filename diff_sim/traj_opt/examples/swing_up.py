@@ -31,7 +31,7 @@ if __name__ == "__main__":
     optimizer = PMP(loss=loss_fn, grad_loss=grad_loss_fn)
     optimal_U = optimizer.solve(U0, learning_rate=0.2, max_iter=100)
 
-    from diff_sim.utils.mj import visualise_traj_generic
+    from diff_sim.utils.mj_viewers import visualise_traj_generic
     from diff_sim.traj_opt.pmp import simulate_trajectory
     import mujoco
 
