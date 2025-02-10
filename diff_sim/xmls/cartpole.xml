@@ -26,8 +26,8 @@
         <material name="target_default" rgba=".6 .3 .3 1"/>
         <material name="target_highlight" rgba=".6 .3 .3 .4"/>
     </asset>
-    <option timestep="0.01" integrator="RK4">
-        <flag contact="disable" gravity="enable"/>
+    <option timestep="0.01" impratio="10" iterations="1" ls_iterations="4">
+        <flag contact="disable" gravity="enable" eulerdamp="disable"/>
     </option>
 
     <default>
@@ -61,7 +61,7 @@
     </worldbody>
 
     <actuator>
-    	<motor name="slide" joint="slider" gear="10" ctrllimited="true" ctrlrange="-1 1" />
+    	<motor name="slide" joint="slider" gear="10" ctrllimited="false" ctrlrange="-1 1" />
    </actuator>
 
 </mujoco>

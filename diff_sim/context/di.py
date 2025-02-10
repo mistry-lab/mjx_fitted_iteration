@@ -73,7 +73,8 @@ def run_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
 def terminal_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     # x^T Q_f x
     x = state_encoder(mx,dx)
-    return jnp.dot(x.T, jnp.dot(jnp.diag(jnp.array([10, 0.01])), x)) * 0.0005
+
+
 
 def control_cost(mx: mjx.Model,dx:mjx.Data) -> jnp.ndarray:
     # u^T R u

@@ -1,12 +1,17 @@
+from typing import Tuple
 import jax
 import jax.numpy as jnp
 import equinox as eqx
 import mujoco.mjx as mjx
+from jax import Array
 from jaxtyping import PyTree
-from diff_sim.context.meta_context import Context
-from diff_sim.simulate import controlled_simulate
+from mujoco.mjx import Data
 
-def loss_fn_policy_det(params: PyTree, static: PyTree, dxs:mjx.Data, ctx: Context, user_key: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
+from diff_sim.context.meta_context import Context
+from diff_sim.simulate import controlled_simulate_fd as controlled_simulate
+
+def loss_fn_policy_det(params: PyTree, static: PyTree, dxs:mjx.Data, ctx: Context, user_key: jnp.ndarray) -> tuple[
+    jnp.ndarray, tuple[jnp.ndarray, mjx.Data, jnp.ndarray, jnp.ndarray]]:
     """
         Loss function for the direct analytical policy optimization problem given deterministic dynamics
         Args:
@@ -23,10 +28,10 @@ def loss_fn_policy_det(params: PyTree, static: PyTree, dxs:mjx.Data, ctx: Contex
             loss = 1/B * sum_{b=1}^{B} sum_{t=1}^{T} cost(x_{b,t}, u_{b,t})
     """
     model = eqx.combine(params, static)
-    dxs,_,_,costs,_,terminated = controlled_simulate(dxs, ctx, model, user_key, ctx.cfg.nsteps) #shape: (B, T, 1)
+    dxs, x, ctrl, costs, _, terminated = controlled_simulate(dxs, ctx, model, user_key, ctx.cfg.nsteps) #shape: (B, T, 1)
     costs = jnp.sum(costs, axis=1)
     costs = jnp.mean(costs)
-    return costs, (costs, dxs, terminated)
+    return costs, (costs, dxs, terminated, x)
 
 
 def loss_fn_policy_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context, user_key: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:

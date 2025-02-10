@@ -131,3 +131,36 @@ def quaternion_to_angle_axis(quaternion):
         quaternion
     )
     return angle_axis
+
+
+def quat2vel(quat, dt):
+    """
+    Equivalent to mju_quat2Vel but returns the result instead of modifying an array.
+    quat: (4,) array-like, quaternion in [w, x, y, z] format
+    dt: scalar
+    """
+    # Extract the axis from quaternion imaginary part
+    axis = quat[1:]
+    # Compute the magnitude (sin_a_2) and normalize
+    sin_a_2 = jnp.linalg.norm(axis)
+    # Avoid division by zero by conditionally normalizing
+    axis = jnp.where(sin_a_2 > 1e-15, axis / sin_a_2, axis)
+    # Compute angle speed
+    speed = 2.0 * jnp.arctan2(sin_a_2, quat[0])
+    # When axis-angle is larger than pi, adjust
+    speed = jnp.where(speed > jnp.pi, speed - 2.0 * jnp.pi, speed)
+    # Divide by dt
+    speed = speed / dt
+    return axis * speed
+
+
+def sub_quat(qa, qb):
+    """
+    Equivalent to mju_subQuat(res, qa, qb), but returns res.
+    qb * quat(res) = qa  =>  quat(res) = neg(qb) * qa
+    The 3D velocity is then computed from the 'difference' quaternion.
+    """
+    # qdif = neg(qb) * qa
+    qdif = quaternion_multiply(quaternion_conjugate(qb), qa)
+    # Convert difference quaternion to velocity
+    return quat2vel(qdif, 1.0)

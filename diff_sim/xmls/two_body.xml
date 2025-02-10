@@ -1,0 +1,43 @@
+<mujoco model="planar point mass">
+    <visual>
+        <quality shadowsize="2048" />
+        <headlight ambient="0.4 0.4 0.4" diffuse="0.8 0.8 0.8" specular="0.1 0.1 0.1" />
+    </visual>
+
+  <option impratio="10" iterations="100" ls_iterations="4" timestep="0.01">
+    <flag eulerdamp="disable"/>
+  </option>
+
+  <custom>
+    <numeric data="15" name="max_contact_points"/>
+    <numeric data="15" name="max_geom_pairs"/>
+  </custom>
+
+    <asset>
+        <texture type="skybox" name="skybox" builtin="gradient" mark="random" rgb1="0.4 0.6 0.8" rgb2="0 0 0" markrgb="1 1 1" width="800" height="4800" />
+        <texture type="2d" name="grid" builtin="checker" mark="edge" rgb1="0.1 0.2 0.3" rgb2="0.2 0.3 0.4" markrgb="0.2 0.3 0.4" width="300" height="300" />
+        <material name="grid" texture="grid" texuniform="true" reflectance="0.2" />
+    </asset>
+
+    <worldbody>
+        <geom name="ground2" size="5 5 0.1" pos="-0.0 0 -0.013" type="plane" rgba=".123 .140 .28 1" contype="1" conaffinity="2"/>
+        <!-- <geom name="ground" size="1 1 0.2" pos="-0.0 0 -0.213" type="box" rgba=".123 .140 .28 1" contype="1" conaffinity="2"/> -->
+
+        <body name="object1" pos="0.0 0.0 0.25">
+            <joint name="free_joint_body_1" type="ball" damping="0.0001" armature="0.0"/>
+            <camera name="cam1" pos="0 -0.3 0.3" xyaxes="1 0 0 0 0.7 0.7"/>
+<!--            <geom name="pointmass1" type="sphere" size=".042" material="grid" mass=".01" condim="3"  group="2" solimp="0.1 0.95 0.1 0.5 2" solref="0.02 1.0"/>-->
+             <geom name="pointmass1" type="capsule" size=".04 0.09" material="grid" mass="0.005" condim="3" contype="7" group="2" solref="0.01 1.0" pos="0.02 0.0 0.0"/>
+             <geom name="pointmass3" type="capsule" size=".04 0.09" material="grid" mass="0.005" condim="3" contype="7" group="2" solref="0.01 1.0" pos="-0.02 0.0 0.0"/>
+        </body>
+
+        <body name="object2" pos="1.0 0.0 1.035">
+            <joint name="free_joint_body_2" type="free" damping="0.0001"/>
+            <camera name="cam2" pos="0 -0.3 0.3" xyaxes="1 0 0 0 0.7 0.7"/>
+            <geom name="pointmass2" type="sphere" size=".042" material="grid" mass=".01" condim="3" contype="7"  solimp="0.1 0.95 0.1 0.5 2" friction="1.1 0.01 0.003" group="2" solref="0.01 1.0"/>
+        </body>
+        <body mocap="true" name="mocap_target">
+          <geom type="sphere" size="0.025" rgba="1 0 0 1" contype="0" conaffinity="0"/>
+        </body>
+    </worldbody>
+</mujoco>

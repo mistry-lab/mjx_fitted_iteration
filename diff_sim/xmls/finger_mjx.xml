@@ -28,8 +28,8 @@
     </asset>
 
 <!--   important mjx options  -->
-  <option timestep="0.0075" impratio="10" iterations="1" ls_iterations="4">
-    <flag gravity="disable" eulerdamp="disable"/>
+  <option timestep="0.01" impratio="10" iterations="100" ls_iterations="4">
+    <flag eulerdamp="disable" gravity="disable"/>
   </option>
 
 <!--  reduce contact computation for mjx -->
@@ -38,45 +38,65 @@
     <numeric data="15" name="max_geom_pairs"/>
   </custom>
 
-    <default>`
-        <geom solimp="0 0.9 0.01" solref=".02 1"/>
+    <default>
+        <geom solimp="0 0.99 0.1" solref="0.02 1"/>
         <joint type="hinge" axis="0 -1 0"/>
         <motor ctrllimited="true" ctrlrange="-1 1"/>
-        <default class="finger">
+        <!-- <default class="finger">
             <site type="ellipsoid" size=".025 .03 .025" rgba=".5 .5 .5 .3" group="3"/>
-        </default>
+        </default> -->
     </default>
-
+ 
     <worldbody>
         <light name="light" directional="true" diffuse=".6 .6 .6" pos="0 0 2" specular=".3 .3 .3"/>
         <geom name="ground" type="plane" pos="0 0 -0.6" size=".6 .2 10" material="grid"/>
         <camera name="cam0" pos="0 -1 .8" xyaxes="1 0 0 0 1 2"/>
         <camera name="cam1" pos="0 -1 .4" xyaxes="1 0 0 0 0 1" />
 
-        <body name="proximal" pos="0 0 -0.01" childclass="finger">
-<!--            <geom name="proximal_decoration" type="cylinder" fromto="0 -.033 0 0 .033 0" size=".034" material="decoration" />-->
+        <body name="proximal" pos="-.2 0 -0.01" >
+            <geom name="proximal_decoration" type="cylinder" fromto="0 -.033 0 0 .033 0" size=".034" material="decoration" />
             <joint name="proximal" range="-150 -80" ref="-90" damping="0.05" limited="false" />
             <geom name="proximal" type="capsule" material="self" size=".03" fromto="0 0 0 0 0 -.17"/>
-            <body name="distal" pos="0 0 -.24" childclass="finger">
+            <body name="distal" pos="0 0 -.18" >
                 <joint name="distal" range="-50 50" damping="0.05" limited="false"/>
                 <geom name="distal" type="capsule" size=".028" material="self" fromto="0 0 0 0 0 -.16"/>
-<!--                <geom name="fingertip" type="capsule" size=".03" material="effector" fromto="0 0 -.13 0 0 -.161"/>-->
-<!--                <site name="touchtop" pos=".01 0 -.17"/>-->
-<!--                <site name="touchbottom" pos="-.01 0 -.17"/>-->
+                <geom name="fingertip" type="capsule" size=".03" material="effector" fromto="0 0 -.13 0 0 -.161"/>
+                <site name="fingertip_site" type="sphere" pos="0 0 -0.161"  size="0.035" rgba="1. .97 0. 0.15"/>  
             </body>
         </body>
 
-        <body name="spinner" pos="0 0 -.33">
-            <joint name="hinge" range="-50 50" damping=".35" limited="false"/>
-            <geom name="cap1" type="capsule" size=".04 .09" material="self" pos=".0 0 0" />
-<!--            <site name="tip" type="sphere"  size=".02" pos="0 0 .13" material="target"/>-->
-<!--            <geom name="spinner_decoration" type="cylinder" fromto="0 -.045 0 0 .045 0" size=".02" material="decoration"/>-->
+        <body name="spinner" pos="-.2 0 -.4">
+            <joint name="free_joint_body_1" type="ball" damping="0.0005" armature="0.0"/>
+            <geom name="cap1" type="capsule" size=".04 0.09" material="grid" mass="0.005" condim="3" contype="7" group="2" solref="0.01 1.0" pos="0.02 0.0 0.0"/>
+            <geom name="cap2" type="capsule" size=".04 0.09" material="grid" mass="0.005" condim="3" contype="7" group="2" solref="0.01 1.0" pos="-0.02 0.0 0.0"/>
+            <site name="capsule_site" type="sphere" size="0.06" material="self" pos="0 0 0.1"  rgba=".3 .5 .7 0.25"/>
+            <geom name="spinner_decoration" type="cylinder" fromto="0 -.045 0 0 .045 0" size=".02" material="decoration"/>
+            <geom name="target" pos="0. 0. 0.12" type="sphere" size="0.02" rgba=".3 .5 .7 0.25" contype="0" conaffinity="0"/>
+            <site name="target_site" type="sphere" pos="0 0 0.12"  size=".015" rgba="1. .97 0. 0.8"/>    
         </body>
+
+<!--        <body name="spinner" pos="-.2 0 -.3">-->
+<!--            <joint name="hinge" type="ball" frictionloss=".0" damping=".00035" limited="false"/>-->
+<!--            <geom name="ball" type="sphere" size=".07" material="grid" pos="0. 0 0" />-->
+<!--        </body>-->
+
+        <body mocap="true" name="target" pos="-.2 0 -.4" quat="0. 0.707107 0. 0.707107">
+            <!-- A joint for tracking angular displacement -->
+            <geom name="target_decoration" pos="0. 0. 0.12" type="sphere" size="0.02" rgba="0.961 0.294 0.145 0.25" contype="0" conaffinity="0"/>
+        </body>
+
 
     </worldbody>
 
+
+<!--    <sensor>-->
+<!--        <touch name="touch_sphere" site="capsule_site" cutoff="1."/>-->
+<!--        <framepos name="pos_fingertip" objtype="site" objname="fingertip_site" reftype="world" refname="world"/>-->
+<!--        <framepos name="pos_spinner" objtype="site" objname="target_site" reftype="world" refname="world"/>-->
+<!--    </sensor>-->
+
     <actuator>
-        <motor name="proximal" joint="proximal" gear="3"/>
+        <motor name="proximal" joint="proximal" gear="1.5"/>
         <motor name="distal" joint="distal" gear="1.5"/>
     </actuator>
 </mujoco>

@@ -3,6 +3,36 @@ import jax
 import jax.numpy as jnp
 from abc import ABC, abstractmethod
 
+def clip_grad_elementwise(grads, clip_value=1.0):
+    """
+    Clips each element of the gradients PyTree to lie within [-clip_value, clip_value].
+
+    Args:
+        grads: A PyTree containing gradient arrays.
+        clip_value: The maximum absolute value for each gradient element.
+
+    Returns:
+        A PyTree with clipped gradients.
+    """
+    return jax.tree_util.tree_map(lambda g: jnp.clip(g, -clip_value, clip_value), grads)
+
+
+def clip_grad_global_norm(grads, max_norm=1.0):
+    """
+    Clips the gradients PyTree based on the global norm.
+
+    Args:
+        grads: A PyTree containing gradient arrays.
+        max_norm: The maximum allowed norm for the gradients.
+
+    Returns:
+        A PyTree with scaled gradients if the global norm exceeds max_norm.
+    """
+    global_norm = jnp.sqrt(jnp.sum(jax.tree_util.tree_map(lambda g: jnp.sum(g ** 2), grads)))
+    scaling_factor = jnp.minimum(1.0, max_norm / (global_norm + 1e-6))
+    return jax.tree_util.tree_map(lambda g: g * scaling_factor, grads)
+
+
 class Network(eqx.Module, ABC):
     """
     Abstract base class for policies. Users should inherit from this class
@@ -43,7 +73,9 @@ class Network(eqx.Module, ABC):
         (loss_value, res), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(
             params, static, dxs, ctx, user_key
         )
-        # res
+        # grads = jax.tree_util.tree_map(lambda x: jnp.nan_to_num(x), grads)
+        # grads = clip_grad_elementwise(grads, clip_value=1.0)
+
         updates, state = optim.update(grads, state, model)
         model = eqx.apply_updates(model, updates)
 

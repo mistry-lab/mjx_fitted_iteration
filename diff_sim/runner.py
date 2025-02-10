@@ -1,25 +1,32 @@
 import argparse
+import time
+
 import wandb
 import mujoco
 from mujoco import viewer
 import equinox as eqx
 import optax
-from jax import config
 import jax
+from jax import config
+config.update('jax_default_matmul_precision', 'high')
+config.update("jax_enable_x64", True)
 import jax.numpy as jnp
 import contextlib  # Added for handling headless mode
 from diff_sim.context.tasks import ctxs
 from diff_sim.utils.tqdm import trange
-from diff_sim.utils.mj import visualise_policy
-from diff_sim.utils.generic import save_model
+from diff_sim.utils.mj_viewers import visualise_policy, visualise_traj
+from diff_sim.utils.generic_helpers import save_model
 from diff_sim.utils.mj_data_manager import create_data_manager
+from diff_sim.simulate import controlled_simulate, controlled_simulate_fd
 
-config.update('jax_default_matmul_precision', 'high')
 
+# stop when you hit NaNs in jax
+# jax.config.update("jax_debug_nans", True)
 if __name__ == '__main__':
     try:
         parser = argparse.ArgumentParser()
-        parser.add_argument("--task", help="task name", default="double_integrator")
+        parser.add_argument("--task", help="task name", default="finger")
+        parser.add_argument("--ad", action="store_false", help="Uses automatic differentiation")
         parser.add_argument("--wb_project", help="wandb project name", default="not_named")
         parser.add_argument("--headless", action="store_true", help="Disable visualization")
         parser.add_argument(
@@ -29,6 +36,9 @@ if __name__ == '__main__':
         args = parser.parse_args()
         ctx = ctxs[args.task]
 
+        # Finite difference or automatic differentiation
+        simulate = controlled_simulate_fd if args.ad else controlled_simulate
+
         # Initialize wandb
         wandb.init(anonymous="allow", mode='offline') if args.wb_project is None else (
             wandb.init(project=args.wb_project, anonymous="allow")
@@ -36,6 +46,8 @@ if __name__ == '__main__':
 
         # Initial keys for random number generation; these will be split for each iteration
         init_key = jax.random.PRNGKey(ctx.cfg.seed)
+        #array of keys
+
         key, subkey = jax.random.split(init_key)
 
         # Model and data for rendering (CPU side)
@@ -54,19 +66,31 @@ if __name__ == '__main__':
             # make_data that give batch of dx
             key, init_key = jax.random.split(key)
             data_manager = create_data_manager()
-            dxs = data_manager.create_data(ctx.cfg.mx, ctx,  ctx.cfg.batch, init_key)
+            dxs = data_manager.create_data(ctx.cfg.mx, ctx, ctx.cfg.batch*ctx.cfg.samples, init_key)
             sum_loss, sum_cost, sum_reset, iter = 0, 0, 0, ctx.cfg.ntotal//ctx.cfg.nsteps
             # init data
             for e in (es := trange(ctx.cfg.epochs)):
                 key, xkey, tkey, user_key = jax.random.split(key, num = 4)
                 net, opt_state, loss_value, res = make_step(dxs, optim, net, opt_state, ctx, user_key)
-                traj_cost, dxs, terminated = res
+                traj_cost, dxs, terminated, x = res
+                # visualise_traj(x, data, model, viewer, ctx)
+                # print("Waiting for 10 seconds before resetting data...")
+                # time.sleep(0.5)
                 dxs = data_manager.reset_data(ctx.cfg.mx, dxs, ctx, tkey, terminated)
                 sum_loss += loss_value.item()
                 sum_cost += traj_cost.item()
                 sum_reset += jnp.sum(terminated).item()
+
                 if e % iter == 0:
-                    log_data = {"Loss avg": round(sum_loss/iter, 3), "Traj Cost avg": round(sum_cost/iter, 3), "nreset avg": sum_reset}
+                    key, xkey, tkey = jax.random.split(key, num = 3)
+                    dx_vis = data_manager.create_data(ctx.cfg.mx, ctx, 2, xkey)
+                    _, _, _, costs, _, _ = eqx.filter_jit(simulate)(dx_vis, ctx, net, tkey, ctx.cfg.ntotal)
+                    log_data = {
+                        "Loss avg": round(sum_loss/iter, 3),
+                        "Traj Cost avg": jnp.mean(jnp.sum(costs, axis=-1)),
+                        "nreset avg": sum_reset
+                    }
+
                     wandb.log(log_data)
                     es.set_postfix(log_data)
                     sum_loss, sum_cost, sum_reset = 0, 0, 0
