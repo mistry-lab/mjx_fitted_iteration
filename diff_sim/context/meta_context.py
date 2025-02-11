@@ -4,9 +4,8 @@ import mujoco
 from dataclasses import dataclass
 import equinox as eqx
 from jaxtyping import PyTree
-from jedi.inference.gradual.typing import Callable
+from typing import Callable, Optional, Set
 from mujoco import mjx
-
 
 @jax.tree_util.register_static
 @dataclass(frozen=True)
@@ -39,6 +38,9 @@ class Context:
         [PyTree, PyTree, mjx.Data, Callable,jnp.ndarray],
         tuple[jnp.ndarray, tuple[jnp.ndarray, mjx.Data, jnp.ndarray, jnp.ndarray]]
     ]
+    ctrl_dim: Optional[int]                  # Dimension of the control (not necessarily dx.ctrl)
+    target_fields: Optional[Set[str]] = None # Target fields for finite differences 
+    eps: Optional[float] = 1e-6              # Eps for finite differences 
 
     def __post_init__(self):
         assert self.num_gpu <= jax.device_count(), \
