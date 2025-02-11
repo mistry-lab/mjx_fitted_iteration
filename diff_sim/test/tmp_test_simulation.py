@@ -9,9 +9,8 @@ import equinox as eqx
 import time
 import numpy as np
 from diff_sim.nn.base_nn import Network
-import os
-os.environ["JAX_CHECK_TRACER_LEAKS"] = "True"
-jax.checking_leaks()
+from diff_sim.loss_funcs import loss_fn_policy_det
+import optax
 
 jax.config.update("jax_enable_x64", True)
 jax.config.update('jax_default_matmul_precision', 'high')
@@ -63,7 +62,7 @@ if __name__ == "__main__":
         ctrl_dim=1,
         mx=mjx.put_model(model),
         gen_model=lambda: mujoco.MjModel.from_xml_string("../xmls/fingers_ball.xml"),
-        run_cost=lambda m, d: jnp.sum(d.ctrl**2),
+        run_cost=lambda m, d: jnp.sum(5.),
         terminal_cost=lambda m, d: jnp.sum(d.ctrl**2),
         control_cost=lambda m, d: jnp.sum(d.ctrl**2),
         set_data=lambda m, d, x: d,
@@ -71,27 +70,19 @@ if __name__ == "__main__":
         is_terminal=lambda m, d: jnp.array([False]),
         set_control=lambda d, u: d,
         controller=lambda net, m, d, k: (d, jnp.zeros((2, 1))),
-        loss_func=lambda p, s, d, c, k: (jnp.sum(d.ctrl**2), (jnp.sum(d.ctrl**2), d, jnp.zeros((2, 1)), jnp.zeros((2, 1))))
+        loss_func=loss_fn_policy_det
     )
-    net = ctx.gen_network(0)
-
-    # fct_fd = make_step_fn_fd(mx, ctx=ctx)
-    N = 20
-    keys = jax.vmap(lambda x: jax.random.PRNGKey(0))(jnp.arange(20))
-    dxs = jax.vmap(lambda x: mjx.make_data(mx), in_axes=(0,))(jnp.arange(20))
-    simulate_fn = make_simulate_fn(ctx, net,20)
-
-    # fct = make_step_fn(mx, ctx)
-
-    # Compute time for call to fct in a loop:
-    counter = []
-    for _ in range(100):
-        
-        t0 = time.perf_counter_ns()
-        l, x, u, costs, t, terminated = simulate_fn(dxs, keys)
-        t1 = time.perf_counter_ns()
-        counter.append(t1-t0)
-        print("Time [ms] : ", 1e-6*(t1 - t0))
     
+    net, optim = ctx.gen_network(ctx.seed), optax.adamw(ctx.lr)
 
-    # fnc = make_step_fn(mx, set_control)
+    N = 2000
+    keys = jax.vmap(lambda x: jax.random.PRNGKey(0))(jnp.arange(N))
+    dxs = jax.vmap(lambda x: mjx.make_data(mx), in_axes=(0,))(jnp.arange(N))
+    simulate_fn = make_simulate_fn_fd(ctx, net,100)
+
+    for _ in range(100):
+        opt_state = optim.init(eqx.filter(net, eqx.is_array))
+        t0 = time.perf_counter_ns()
+        model, state, loss_value, res = net.make_step(dxs, optim, net, opt_state, ctx, keys, simulate_fn)
+        t1 = time.perf_counter_ns()
+        print("Time [ms] : ", 1e-6*(t1 - t0))

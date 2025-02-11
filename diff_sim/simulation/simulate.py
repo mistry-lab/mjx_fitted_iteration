@@ -7,6 +7,9 @@ from diff_sim.nn.base_nn import Network
 from typing import Callable
 from diff_sim.simulation.step import make_step_fn, make_step_fn_fd
 
+# Note : It seems that net can be passed only when created the simulation function
+# as the update rely on tree_map function, the weight changes are properly tracked.
+# TODO: to check.
 def _simulate_fn(ctx: Context, net: Network, ntime: int, make_step_fn=Callable):
     mx = ctx.mx
     dt = mx.opt.timestep

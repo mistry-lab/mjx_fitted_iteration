@@ -55,7 +55,7 @@ class Network(eqx.Module, ABC):
 
     @staticmethod
     @eqx.filter_jit
-    def make_step(dxs, optim, model, state, ctx, user_key):
+    def make_step(dxs, optim, model, state, ctx, user_key, simulate_fn):
         """
         Performs a single optimization step.
 
@@ -70,8 +70,8 @@ class Network(eqx.Module, ABC):
             Tuple[BasePolicy, state, float]: Updated model, updated state, and loss value.
         """
         params, static = eqx.partition(model, eqx.is_array)
-        (loss_value, res), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(
-            params, static, dxs, ctx, user_key
+        (loss_value, res), grads = jax.value_and_grad(ctx.loss_func, has_aux=True)(
+            params, static, dxs, ctx, user_key, simulate_fn
         )
         # grads = jax.tree_util.tree_map(lambda x: jnp.nan_to_num(x), grads)
         # grads = clip_grad_elementwise(grads, clip_value=1.0)

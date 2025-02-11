@@ -34,9 +34,9 @@ class Context:
         [eqx.Module, mjx.Model, mjx.Data, jnp.ndarray],
         tuple[mjx.Data, jnp.ndarray]
     ]
-    loss_func : Callable[
-        [PyTree, PyTree, mjx.Data, Callable,jnp.ndarray],
-        tuple[jnp.ndarray, tuple[jnp.ndarray, mjx.Data, jnp.ndarray, jnp.ndarray]]
+    loss_func: Callable[
+        [Callable, PyTree, PyTree, mjx.Data, Callable, jnp.ndarray],
+        tuple[jnp.ndarray, tuple[jnp.ndarray, mjx.Data, jnp.ndarray, jnp.ndarray]],
     ]
     ctrl_dim: Optional[int]                  # Dimension of the control (not necessarily dx.ctrl)
     target_fields: Optional[Set[str]] = None # Target fields for finite differences 
