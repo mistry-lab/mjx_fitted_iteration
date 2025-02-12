@@ -6,16 +6,20 @@ from diff_sim.context.meta_context import Context
 from diff_sim.nn.base_nn import Network
 from typing import Callable
 from diff_sim.simulation.step import make_step_fn, make_step_fn_fd
+from jaxtyping import PyTree
 
-# Note : It seems that net can be passed only when created the simulation function
+# TODO: Shall we keep jaxtyping for PyTree ? 
+# Note : It seems that net (quinox NN) could be fully passed when created the simulation function
 # as the update rely on tree_map function, the weight changes are properly tracked.
+# For now, static part is passed for the creation and only params part is used during execution 
+# which seems more logical for the gradient.
 # TODO: to check.
-def _simulate_fn(ctx: Context, net: Network, ntime: int, make_step_fn=Callable):
+def _simulate_fn(ctx: Context, static: PyTree, ntime: int, make_step_fn=Callable):
+    step_fn = make_step_fn(ctx)
     mx = ctx.mx
     dt = mx.opt.timestep
-    step_fn = make_step_fn(ctx)
     ctx = ctx
-    net = net
+    static = static
 
     # TODO: Is ntime not part of ctx ? (Need to re-jit the entire function anyway if changed)
     # TODO: Should we create only a single run_cost function ?
@@ -28,7 +32,8 @@ def _simulate_fn(ctx: Context, net: Network, ntime: int, make_step_fn=Callable):
     # TODO: make a state encoder to dertermine whether concatenate more infos
     # TODO: What if ctrl is shape 0 and we use directly forces for example
     def step(carry, _):
-        dx, key = carry
+        dx, key, params = carry
+        net = eqx.combine(params, static)
         key, subkey = jax.random.split(key)
         u = ctx.controller(net, mx, dx, subkey)
         dx = ctx.set_control(dx,u) # To get the ctrl inside dx for the cost. TODO: optimise this.
@@ -37,11 +42,11 @@ def _simulate_fn(ctx: Context, net: Network, ntime: int, make_step_fn=Callable):
         terminated = ctx.is_terminal(mx, dx)
         x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
         t = jnp.expand_dims(dx.time, axis=0)
-        return (dx, key), jnp.concatenate([x, dx.ctrl, cost, t, terminated], axis=0)
+        return (dx, key, params), jnp.concatenate([x, dx.ctrl, cost, t, terminated], axis=0)
 
-    def rollout(dx, key):
+    def rollout(dx, key, params):
         x_init = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
-        (dx,_), res = jax.lax.scan(step, (dx, key), None, length=ntime-1)
+        (dx,_,_), res = jax.lax.scan(step, (dx, key, params), None, length=ntime-1)
         x, u, costs, ts, terminated = res[...,:-mx.nu-3], res[...,-mx.nu-3:-3], res[...,-3], res[...,-2], res[...,-1]
         x = jnp.concatenate([x_init.reshape(1,-1), x], axis=0)
         t = jnp.concatenate([jnp.array([dt]), ts], axis=0) # TODO : Shall we use dx.time instead here ? 
@@ -63,13 +68,13 @@ def _simulate_fn(ctx: Context, net: Network, ntime: int, make_step_fn=Callable):
         costs = costs * jnp.logical_not(termination_mask)
         return dx, x, u, costs, t, jnp.any(termination_mask)
 
-    return jax.vmap(rollout, in_axes=(0,0))
+    return jax.vmap(rollout, in_axes=(0,0, None))
 
 
 @eqx.filter_jit
-def make_simulate_fn_fd(ctx: Context, net: Network, ntime: int):
-    return _simulate_fn(ctx, net, ntime, make_step_fn_fd)
+def make_simulate_fn_fd(ctx: Context, static: PyTree, ntime: int):
+    return _simulate_fn(ctx, static, ntime, make_step_fn_fd)
 
 @eqx.filter_jit
-def make_simulate_fn(ctx: Context, net: Network, ntime: int):
-    return _simulate_fn(ctx, net, ntime, make_step_fn)
+def make_simulate_fn(ctx: Context, static: PyTree, ntime: int):
+    return _simulate_fn(ctx, static, ntime, make_step_fn)

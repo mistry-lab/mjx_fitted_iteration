@@ -22,8 +22,8 @@ def loss_fn_policy_det(params: PyTree, static: PyTree, dxs:mjx.Data, ctx: Contex
             We compute the sum of the costs over the entire trajectory and average it over the batch
             loss = 1/B * sum_{b=1}^{B} sum_{t=1}^{T} cost(x_{b,t}, u_{b,t})
     """
-    model = eqx.combine(params, static) # TODO: Pass as argument of simulate_fn.
-    dxs, x, _, costs, _, terminated = simulate_fn(dxs, user_key) #shape: (B, T, 1)
+    # model = eqx.combine(params, static) # TODO: Pass as argument of simulate_fn.
+    dxs, x, _, costs, _, terminated = simulate_fn(dxs, user_key, params) #shape: (B, T, 1)
     costs = jnp.sum(costs, axis=1)
     costs = jnp.mean(costs)
     return costs, (costs, dxs, terminated, x)
