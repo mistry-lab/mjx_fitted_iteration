@@ -53,7 +53,7 @@ if __name__ == "__main__":
         lr=4e-3,
         num_gpu=1,
         seed=0,
-        nsteps=24,
+        nsteps=100,
         ntotal=800,
         epochs=1000,
         batch=2,
@@ -79,11 +79,15 @@ if __name__ == "__main__":
     N = 200
     keys = jax.vmap(lambda x: jax.random.PRNGKey(0))(jnp.arange(N))
     dxs = jax.vmap(lambda x: mjx.make_data(mx), in_axes=(0,))(jnp.arange(N))
-    simulate_fn = make_simulate_fn_fd(ctx,100)
+    simulate_fn = make_simulate_fn_fd(ctx)
 
     for _ in range(100):
         opt_state = optim.init(eqx.filter(net, eqx.is_array))
         t0 = time.perf_counter_ns()
-        model, state, loss_value, res = net.make_step(dxs, optim, net, opt_state, ctx, keys, simulate_fn)
+        model, state, loss_value, res = net.step(dxs, optim, net, opt_state, ctx, keys, simulate_fn)
         t1 = time.perf_counter_ns()
         print("Time [ms] : ", 1e-6*(t1 - t0))
+
+    # runner = Runner()
+    # runner.run(ctx, simulate_fn, optimiser)
+    # run(ctx, optimiser, simulate_fn)

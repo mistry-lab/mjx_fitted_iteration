@@ -55,7 +55,7 @@ class Network(eqx.Module, ABC):
 
     @staticmethod
     @eqx.filter_jit
-    def make_step(dxs, optim, model, state, ctx, user_key, simulate_fn):
+    def step(dxs, optim, model, state, ctx, user_key, simulate_fn):
         """
         Performs a single optimization step.
 
@@ -84,7 +84,7 @@ class Network(eqx.Module, ABC):
     @staticmethod
     @eqx.filter_jit
     # TODO with dxs
-    def make_step_multi_gpu(optim, model, state, x_init, ctx, user_key):
+    def step_multi_gpu(optim, model, state, x_init, ctx, user_key):
         """
         Performs a single optimization step on multiple GPUs.
 
