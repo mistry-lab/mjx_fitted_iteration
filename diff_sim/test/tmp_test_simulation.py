@@ -79,7 +79,7 @@ if __name__ == "__main__":
     N = 200
     keys = jax.vmap(lambda x: jax.random.PRNGKey(0))(jnp.arange(N))
     dxs = jax.vmap(lambda x: mjx.make_data(mx), in_axes=(0,))(jnp.arange(N))
-    simulate_fn = make_simulate_fn_fd(ctx,static,100)
+    simulate_fn = make_simulate_fn_fd(ctx,100)
 
     for _ in range(100):
         opt_state = optim.init(eqx.filter(net, eqx.is_array))
