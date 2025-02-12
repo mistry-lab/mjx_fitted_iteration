@@ -9,17 +9,18 @@ from diff_sim.simulation.step import make_step_fn, make_step_fn_fd
 from jaxtyping import PyTree
 
 # TODO: Shall we keep jaxtyping for PyTree ? 
-# Note : It seems that net (quinox NN) could be fully passed when created the simulation function
+# Note : It seems that net (Equinox NN) could be fully passed when created the simulation function
 # as the update rely on tree_map function, the weight changes are properly tracked.
 # For now, static part is passed for the creation and only params part is used during execution 
 # which seems more logical for the gradient.
 # TODO: to check.
-def _simulate_fn(ctx: Context, static: PyTree, ntime: int, make_step_fn=Callable):
+def _simulate_fn(ctx: Context, net: Network, ntime: int, make_step_fn=Callable):
     step_fn = make_step_fn(ctx)
     mx = ctx.mx
     dt = mx.opt.timestep
     ctx = ctx
-    static = static
+    _, static = eqx.partition(net, eqx.is_array)
+    # static = static
 
     # TODO: Is ntime not part of ctx ? (Need to re-jit the entire function anyway if changed)
     # TODO: Should we create only a single run_cost function ?
@@ -67,14 +68,18 @@ def _simulate_fn(ctx: Context, static: PyTree, ntime: int, make_step_fn=Callable
         ], axis=0)
         costs = costs * jnp.logical_not(termination_mask)
         return dx, x, u, costs, t, jnp.any(termination_mask)
+    
+    def simulate(dx,key, net):
+        params, _ = eqx.partition(net, eqx.is_array)
+        return jax.vmap(rollout, in_axes=(0,0, None))(dx,key,params)
 
-    return jax.vmap(rollout, in_axes=(0,0, None))
+    return simulate
 
 
 @eqx.filter_jit
-def make_simulate_fn_fd(ctx: Context, static: PyTree, ntime: int):
-    return _simulate_fn(ctx, static, ntime, make_step_fn_fd)
+def make_simulate_fn_fd(ctx: Context, net: Network, ntime: int):
+    return _simulate_fn(ctx, net, ntime, make_step_fn_fd)
 
 @eqx.filter_jit
-def make_simulate_fn(ctx: Context, static: PyTree, ntime: int):
-    return _simulate_fn(ctx, static, ntime, make_step_fn)
+def make_simulate_fn(ctx: Context, net: Network, ntime: int):
+    return _simulate_fn(ctx, net, ntime, make_step_fn)
