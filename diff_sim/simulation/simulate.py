@@ -23,9 +23,10 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
             return jnp.array([xcost + ucost])
 
         def step(carry, _):
-            dx, key = carry
+            dx, key, params = carry
+            model = eqx.combine(params, static)
             key, subkey = jax.random.split(key)
-            u = ctx.controller(net, ctx.mx, dx, subkey)
+            dx, u = ctx.controller(model, ctx.mx, dx, subkey) # Fix input/output
             dx = ctx.set_control(
                 dx, u
             )  # To get the ctrl inside dx for the cost. TODO: optimise this.
@@ -34,11 +35,11 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
             terminated = ctx.is_terminal(ctx.mx, dx)
             x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
             t = jnp.expand_dims(dx.time, axis=0)
-            return (dx, key), jnp.concatenate([x, dx.ctrl, cost, t, terminated], axis=0)
+            return (dx, key, params), jnp.concatenate([x, dx.ctrl, cost, t, terminated], axis=0)
 
-        def rollout(dx, key):
+        def rollout(dx, key, params):
             x_init = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
-            (dx, _), res = jax.lax.scan(step, (dx, key), None, length=ctx.nsteps - 1)
+            (dx, _, _), res = jax.lax.scan(step, (dx, key, params), None, length=ctx.nsteps - 1)
             x, u, costs, ts, terminated = (
                 res[..., : -ctx.mx.nu - 3],
                 res[..., -ctx.mx.nu - 3 : -3],
@@ -74,16 +75,16 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
             costs = costs * jnp.logical_not(termination_mask)
             return dx, x, u, costs, t, jnp.any(termination_mask)
 
-        return jax.vmap(rollout, in_axes=(0, 0))(dxs, key)
+        params, static = eqx.partition(net, eqx.is_array)
+        return jax.vmap(rollout, in_axes=(0, 0, None))(dxs, key, params)
 
     return simulate
 
-
-@eqx.filter_jit
+# @eqx.filter_jit
 def make_simulate_fn_fd(ctx: Context):
     return _simulate_fn(ctx, make_step_fn_fd)
 
 
-@eqx.filter_jit
+# @eqx.filter_jit
 def make_simulate_fn(ctx: Context):
     return _simulate_fn(ctx, make_step_fn)

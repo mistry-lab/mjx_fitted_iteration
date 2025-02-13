@@ -31,11 +31,35 @@ class DataManager(eqx.Module):
         return dxs
 
 
+def create(mx: mjx.Model, batch_size):  
+    def set_zero(dx,x,mx): 
+        # def assign_inplace(dx_in,args):
+        #     id, val = args
+        #     dx_in = dx_in.replace(qpos=dx_in.qpos.at[id].set(val))
+        #     return dx_in, None
+        # @jax.jit
+        # def scan_qpos(dx,x,mx):
+        #     dx, _ = jax.lax.scan(assign_inplace, dx, (jnp.arange(mx.nq, dtype=int), x[:mx.nq]))
+        #     return dx
+        for i in range(mx.nq):
+            dx = dx.replace(qpos=dx.qpos.at[i].set(x[i]))
+        for j in range(mx.nv):
+            dx = dx.replace(qvel=dx.qvel.at[j].set(x[mx.nq + j]))
+        return dx
+
+    dxs = jax.vmap(lambda x: mjx.make_data(mx), in_axes=(0,))(jnp.arange(batch_size))
+    qrefs = jnp.zeros((batch_size, mx.nq+mx.nv))
+    # qrefs[:,4] = 1. # quat 1st index
+    qrefs = qrefs.at[:,4].set(1.)
+    dxs = jax.vmap(set_zero, in_axes=(0,0, None))(dxs,qrefs, mx)
+
+    return dxs
+
 def create_data_manager() -> DataManager:
     def set_init(mx: mjx.Model, ctx, batch_size, key: jnp.ndarray) -> mjx.Data:
         xs = jnp.zeros((batch_size, mx.nq + mx.nv))
         subkeys = jax.random.split(key, batch_size)
-        def set_zero(x, mx):
+        def set_zero(x,mx):
             dx = mjx.make_data(mx)
             qpos = dx.qpos.at[:].set(x[:mx.nq])
             qvel = dx.qvel.at[:].set(x[mx.nq:])
@@ -43,13 +67,14 @@ def create_data_manager() -> DataManager:
             return dx
 
         dxs = jax.vmap(set_zero, in_axes=(0, None))(xs, mx)
-        dxs = jax.vmap(ctx.cbs.set_data, in_axes=(None, 0, None, 0))(mx, dxs, ctx, subkeys)
-        dxs = jax.vmap(mjx.step, in_axes=(None, 0))(mx, dxs)
+        # dxs = jax.vmap(ctx.set_data, in_axes=(None, 0, 0))(mx, dxs, subkeys)
+        # dxs = jax.vmap(mjx.step, in_axes=(None, 0))(mx, dxs)
 
         # TODO: test if these work
         # dxs = jax.vmap(lambda x: set_zero(x, mx))(xs)
-        # dxs = jax.vmap(lambda dx, subkey: ctx.cbs.set_data(mx, dx, ctx, subkey))(dxs, subkeys)
+        # dxs = jax.vmap(lambda dx, subkey: ctx.set_data(mx, dx, subkey))(dxs, subkeys)
         # dxs = jax.vmap(lambda dx: mjx.step(mx, dx))(dxs)
+        # dxs = jax.vmap(lambda x: set_zero(x,mx), in_axes=(0,))(jnp.arange(200))
 
         return dxs
 

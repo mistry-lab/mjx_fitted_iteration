@@ -53,77 +53,77 @@ class Network(eqx.Module, ABC):
         """
         pass
 
-    @staticmethod
-    @eqx.filter_jit
-    def step(dxs, optim, model, state, ctx, user_key, simulate_fn):
-        """
-        Performs a single optimization step.
+@staticmethod
+@eqx.filter_jit
+def step_single_gpu(dxs, optim, model, state, ctx, user_key, simulate_fn):
+    """
+    Performs a single optimization step.
 
-        Args:
-            dxs: ..
-            optim: Optimizer instance (e.g., from optax).
-            model (BasePolicy): The model to update.
-            state: Optimizer state.
-            ctx: Context object containing additional information like loss function.
+    Args:
+        dxs: ..
+        optim: Optimizer instance (e.g., from optax).
+        model (BasePolicy): The model to update.
+        state: Optimizer state.
+        ctx: Context object containing additional information like loss function.
 
-        Returns:
-            Tuple[BasePolicy, state, float]: Updated model, updated state, and loss value.
-        """
-        params, static = eqx.partition(model, eqx.is_array)
-        (loss_value, res), grads = jax.value_and_grad(ctx.loss_func, has_aux=True)(
-            params, static, dxs, ctx, user_key, simulate_fn
+    Returns:
+        Tuple[BasePolicy, state, float]: Updated model, updated state, and loss value.
+    """
+    params, static = eqx.partition(model, eqx.is_array)
+    (loss_value, res), grads = jax.value_and_grad(ctx.loss_func, has_aux=True)(
+        params, static, dxs, ctx, user_key, simulate_fn
+    )
+    # grads = jax.tree_util.tree_map(lambda x: jnp.nan_to_num(x), grads)
+    # grads = clip_grad_elementwise(grads, clip_value=1.0)
+
+    updates, state = optim.update(grads, state, model)
+    model = eqx.apply_updates(model, updates)
+
+    return model, state, loss_value, res
+
+@staticmethod
+@eqx.filter_jit
+# TODO with dxs
+def step_multi_gpu(optim, model, state, x_init, ctx, user_key):
+    """
+    Performs a single optimization step on multiple GPUs.
+
+    Args:
+        optim: Optimizer instance (e.g., from optax).
+        model (BasePolicy): The model to update.
+        state: Optimizer state.
+        x_init: Initial input data.
+        ctx: Context object containing additional information like loss function.
+    """
+    raise NotImplementedError
+    params, static = eqx.partition(model, eqx.is_array)
+
+    # Reshape x_init to have leading dimension equal to the number of GPUs
+    num_devices = ctx.cfg.num_gpu
+    x_init = x_init.reshape(num_devices, -1, x_init.shape[-1])
+
+    # Define the function to be pmapped
+    def per_device_loss_and_grad(params, static, x_init, ctx):
+        # Compute per-device loss and gradient
+        (loss_value, traj_costs), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(
+            params, static, x_init, ctx, user_key
         )
-        # grads = jax.tree_util.tree_map(lambda x: jnp.nan_to_num(x), grads)
-        # grads = clip_grad_elementwise(grads, clip_value=1.0)
+        # Average loss and gradients across devices
+        grads = jax.lax.pmean(grads, axis_name='devices')
+        return (loss_value, traj_costs), grads
 
-        updates, state = optim.update(grads, state, model)
-        model = eqx.apply_updates(model, updates)
+    # Compute loss and gradients using pmap
+    (loss_value, traj_costs), grads = eqx.filter_pmap(
+        per_device_loss_and_grad,
+        axis_name='devices',
+        in_axes=(None, None, 0, None),
+    )(params, static, x_init, ctx)
 
-        return model, state, loss_value, res
+    # Extract the averaged gradients from one device
+    grads = jax.tree_util.tree_map(lambda x: x[0], grads)
 
-    @staticmethod
-    @eqx.filter_jit
-    # TODO with dxs
-    def step_multi_gpu(optim, model, state, x_init, ctx, user_key):
-        """
-        Performs a single optimization step on multiple GPUs.
+    # Perform optimization step on a single device
+    updates, state = optim.update(grads, state, model)
+    model = eqx.apply_updates(model, updates)
 
-        Args:
-            optim: Optimizer instance (e.g., from optax).
-            model (BasePolicy): The model to update.
-            state: Optimizer state.
-            x_init: Initial input data.
-            ctx: Context object containing additional information like loss function.
-        """
-        raise NotImplementedError
-        params, static = eqx.partition(model, eqx.is_array)
-
-        # Reshape x_init to have leading dimension equal to the number of GPUs
-        num_devices = ctx.cfg.num_gpu
-        x_init = x_init.reshape(num_devices, -1, x_init.shape[-1])
-
-        # Define the function to be pmapped
-        def per_device_loss_and_grad(params, static, x_init, ctx):
-            # Compute per-device loss and gradient
-            (loss_value, traj_costs), grads = jax.value_and_grad(ctx.cbs.loss_func, has_aux=True)(
-                params, static, x_init, ctx, user_key
-            )
-            # Average loss and gradients across devices
-            grads = jax.lax.pmean(grads, axis_name='devices')
-            return (loss_value, traj_costs), grads
-
-        # Compute loss and gradients using pmap
-        (loss_value, traj_costs), grads = eqx.filter_pmap(
-            per_device_loss_and_grad,
-            axis_name='devices',
-            in_axes=(None, None, 0, None),
-        )(params, static, x_init, ctx)
-
-        # Extract the averaged gradients from one device
-        grads = jax.tree_util.tree_map(lambda x: x[0], grads)
-
-        # Perform optimization step on a single device
-        updates, state = optim.update(grads, state, model)
-        model = eqx.apply_updates(model, updates)
-
-        return model, state, loss_value[0], traj_costs[0]
+    return model, state, loss_value[0], traj_costs[0]
