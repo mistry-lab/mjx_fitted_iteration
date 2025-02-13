@@ -30,6 +30,7 @@ if __name__ == "__main__":
     class Policy(Network):
         layers: list
         act: callable
+        dropout: callable
 
         def __init__(self, dims: list, key):
             keys = jax.random.split(key, len(dims))
@@ -37,11 +38,13 @@ if __name__ == "__main__":
                 dims[i], dims[i + 1], key=keys[i], use_bias=True
             ) for i in range(len(dims) - 1)]
             self.act = jax.nn.relu
+            self.dropout = eqx.nn.Dropout(0.1)
 
-        # @eqx.filter_jit
-        def __call__(self, x):
+        def __call__(self, x, key):
             for layer in self.layers[:-1]:
-                x = self.act(layer(x))
+                x = layer(x)
+                # x = self.act( self.dropout(x, key=key))
+                x = self.act(x)
             x = self.layers[-1](x).squeeze()
             x = jnp.tanh(x) * 1.
             return x
@@ -58,11 +61,13 @@ if __name__ == "__main__":
     ) -> tuple[mjx.Data, jnp.ndarray]:
         x = jnp.concatenate([dx.qpos, dx.qvel])
         # t = jnp.expand_dims(dx.time, axis=0)
-        u = net(x)
+        # u = net(x)
+        # u = 
         # u = 0.5*net(x, t)
         # u += 0.002*jax.random.normal(policy_key, u.shape)
         # Setup offset
         # dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
+        u = jax.random.normal(policy_key,4 ) + net(x, policy_key)
 
         return dx, u
 
@@ -97,31 +102,9 @@ if __name__ == "__main__":
     keys = jax.vmap(lambda x: jax.random.PRNGKey(0))(jnp.arange(N))
     simulate_fn = make_simulate_fn_fd(ctx)
 
-    import contextlib
-    from mujoco import viewer
-    import wandb
-    from diff_sim.utils.tqdm import trange
     data_manager = create_data_manager()
-    # dxs = jax.vmap(lambda x: mjx.make_data(mx), in_axes=(0,))(jnp.arange(N))
-    # dxs = data_manager.create_data(ctx.mx, ctx, ctx.batch*ctx.samples, jax.random.PRNGKey(0))
     dxs = create(mx, ctx.batch)
-    # data = mujoco.MjData(model)
-    # wandb.init(anonymous="allow", mode='offline', project="wb_project")
-    # viewer_context = contextlib.nullcontext() if False else viewer.launch_passive(model, data)
-    # with (jax.default_device(jax.devices()[0])), viewer_context as view:
-    #     net = ctx.gen_network(ctx.seed)
-    #     opt_state = optim.init(eqx.filter(net, eqx.is_array))
-    #     step = step_multi_gpu if ctx.num_gpu > 1 else step_single_gpu
-    #     # opt_state = optim.init(eqx.filter(net, eqx.is_array))
-    #     for e in (es := trange(ctx.epochs)):
-    #         t0 = time.perf_counter_ns()
-    #         model, state, loss_value, res = step_single_gpu(dxs, optim, net, opt_state, ctx, keys, simulate_fn)
-    #         t1 = time.perf_counter_ns()
-    #         print("Time [ms] : ", 1e-6*(t1 - t0))
-
-    # data_manager = create_data_manager()
-    # dxs = data_manager.create_data(ctx.mx, ctx, ctx.batch*ctx.samples, jax.random.PRNGKey(0))
-
+   
     for _ in range(100):
         # dxs = create(mx, 2000)
         opt_state = optim.init(eqx.filter(net, eqx.is_array))

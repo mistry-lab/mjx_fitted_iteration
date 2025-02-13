@@ -4,8 +4,9 @@ import mujoco.mjx as mjx
 from jaxtyping import PyTree
 from typing import Callable
 from diff_sim.context.meta_context import Context
+from diff_sim.nn.base_nn import Network
 
-def loss_fn_policy_det(params: PyTree, static: PyTree, dxs:mjx.Data, ctx: Context, user_key: jnp.ndarray, simulate_fn: Callable) -> tuple[
+def loss_fn_policy_det(model: Network, dxs:mjx.Data, ctx: Context, user_key: jnp.ndarray, simulate_fn: Callable) -> tuple[
     jnp.ndarray, tuple[jnp.ndarray, mjx.Data, jnp.ndarray, jnp.ndarray]]:
     """
         Loss function for the direct analytical policy optimization problem given deterministic dynamics
@@ -22,7 +23,6 @@ def loss_fn_policy_det(params: PyTree, static: PyTree, dxs:mjx.Data, ctx: Contex
             We compute the sum of the costs over the entire trajectory and average it over the batch
             loss = 1/B * sum_{b=1}^{B} sum_{t=1}^{T} cost(x_{b,t}, u_{b,t})
     """
-    model = eqx.combine(params, static) # TODO: Pass as argument of simulate_fn.
     dxs, x, _, costs, _, terminated = simulate_fn(dxs, user_key, model) #shape: (B, T, 1)
     costs = jnp.sum(costs, axis=1)
     costs = jnp.mean(costs)
