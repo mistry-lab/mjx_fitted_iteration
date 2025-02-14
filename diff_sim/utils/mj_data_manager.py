@@ -4,6 +4,7 @@ from mujoco import mjx
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+
 from diff_sim.context.meta_context import Context
 
 class DataManager(eqx.Module):
@@ -16,9 +17,9 @@ class DataManager(eqx.Module):
 
 
     def create_data(
-            self, mx: mjx.Model, ctx: Context, batch_size: int, key: jnp.ndarray
+            self, ctx: Context, key: jnp.ndarray
     ) -> mjx.Data:
-        dxs = self._set_init_compiled(mx, ctx, batch_size, key)
+        dxs = self._set_init_compiled(ctx, key)
         return dxs
 
     def reset_data(
@@ -30,36 +31,13 @@ class DataManager(eqx.Module):
             dxs = self._replace_indices_compiled(dxs, indices_to_reset, new_dxs)
         return dxs
 
-
-def create(mx: mjx.Model, batch_size):  
-    def set_zero(dx,x,mx): 
-        # def assign_inplace(dx_in,args):
-        #     id, val = args
-        #     dx_in = dx_in.replace(qpos=dx_in.qpos.at[id].set(val))
-        #     return dx_in, None
-        # @jax.jit
-        # def scan_qpos(dx,x,mx):
-        #     dx, _ = jax.lax.scan(assign_inplace, dx, (jnp.arange(mx.nq, dtype=int), x[:mx.nq]))
-        #     return dx
-        for i in range(mx.nq):
-            dx = dx.replace(qpos=dx.qpos.at[i].set(x[i]))
-        for j in range(mx.nv):
-            dx = dx.replace(qvel=dx.qvel.at[j].set(x[mx.nq + j]))
-        return dx
-
-    dxs = jax.vmap(lambda x: mjx.make_data(mx), in_axes=(0,))(jnp.arange(batch_size))
-    qrefs = jnp.zeros((batch_size, mx.nq+mx.nv))
-    # qrefs[:,4] = 1. # quat 1st index
-    qrefs = qrefs.at[:,4].set(1.)
-    dxs = jax.vmap(set_zero, in_axes=(0,0, None))(dxs,qrefs, mx)
-
-    return dxs
-
 def create_data_manager() -> DataManager:
-    def set_init(mx: mjx.Model, ctx, batch_size, key: jnp.ndarray) -> mjx.Data:
-        subkeys = jax.random.split(key, batch_size)
-        dxs = jax.vmap(lambda x: mjx.make_data(mx))(jnp.arange(batch_size))
-        dxs = jax.vmap(lambda dx, subkey: ctx.set_data(mx, dx, subkey))(dxs, subkeys)
+    def set_init(ctx: Context, key: jnp.ndarray) -> mjx.Data:
+        mx = ctx.mx
+        batch_size = ctx.batch * ctx.samples
+        keys = jax.random.split(key, batch_size)
+        dxs = jax.vmap(lambda x: mjx.make_data(mx), in_axes=(0,))(jnp.arange(batch_size))
+        dxs = jax.vmap(lambda dx, subkey: ctx.set_data(mx, dx, subkey))(dxs, keys)
         dxs = jax.vmap(lambda dx: mjx.step(mx, dx))(dxs)
 
         return dxs

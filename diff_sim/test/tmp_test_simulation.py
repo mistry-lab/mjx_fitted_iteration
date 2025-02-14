@@ -1,20 +1,21 @@
 import os
 import time
 import jax
-jax.config.update("jax_enable_x64", True)
-jax.config.update('jax_default_matmul_precision', 'high')
+# jax.config.update("jax_enable_x64", True)
+# jax.config.update('jax_default_matmul_precision', 'high')
 import jax.numpy as jnp
 import equinox as eqx
 import mujoco
 from mujoco import mjx
 from mujoco.mjx._src.math import quat_to_mat, axis_angle_to_quat, quat_to_axis_angle
 import optax
+
 import diff_sim
 from diff_sim.loss_funcs import loss_fn_policy_det
 from diff_sim.simulation.simulate import make_simulate_fn_fd, make_simulate_fn
 from diff_sim.training.train_step import step_single_gpu, step_multi_gpu
 from diff_sim.context.meta_context import Context
-from diff_sim.utils.mj_data_manager import create_data_manager, create
+from diff_sim.utils.mj_data_manager import create_data_manager
 
 
 if __name__ == "__main__":
@@ -43,6 +44,20 @@ if __name__ == "__main__":
             x = self.layers[-1](x).squeeze()
             x = jnp.tanh(x) * 1.
             return x
+        
+    def set_data(mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray) -> mjx.Data:
+        theta1 = jax.random.uniform(key, (1,), minval=0.6, maxval=0.7) # proximal1
+        theta2 = jnp.array([-0.4]) # distal1
+        _, key = jax.random.split(key)
+        theta3 = jax.random.uniform(key, (1,), minval=-.7, maxval=-.6) # proximal2
+        theta4 = jnp.array([0.4]) # distal2
+
+        init_quat = jnp.array([1.0, 0.,0.,0.]) # ball
+        qpos = jnp.concatenate([theta1, theta2, theta3, theta4, init_quat])
+        qvel = jnp.zeros(mx.nv)
+        dx = dx.replace(qpos=dx.qpos.at[:].set(qpos), qvel=dx.qvel.at[:].set(qvel))
+
+        return dx
 
     def set_control(dx, u):
         dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
@@ -58,12 +73,6 @@ if __name__ == "__main__":
         u = jax.random.normal(policy_key,(4,)) + net(x, policy_key)
 
         return dx, u
-
-    def set_data(mx: mjx.Model, dx: mjx.Data, data_key: jnp.ndarray) -> mjx.Data:
-        qpos = jnp.array([-0.4, 0.44, 0.44, -0.4])
-        qvel = jnp.zeros(mx.nv)
-        dx.replace(qpos=dx.qpos.at[:].set(qpos), qvel=dx.qvel.at[:].set(qvel))
-        return dx
 
     def cst(dx: mjx.Data):
         quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
@@ -84,7 +93,7 @@ if __name__ == "__main__":
         nsteps=100,
         ntotal=800,
         epochs=1000,
-        batch=200,
+        batch=5,
         samples=1,
         eval=10,
         ctrl_dim=4,
@@ -100,25 +109,25 @@ if __name__ == "__main__":
     )
 
     net, optim = ctx.gen_network(ctx.seed), optax.adamw(ctx.lr)
+    opt_state = optim.init(eqx.filter(net, eqx.is_array))
     params, static = eqx.partition(net, eqx.is_array)
-    keys = jax.vmap(lambda x: jax.random.PRNGKey(0))(jnp.arange(ctx.batch))
+    key_init = jax.random.PRNGKey(0)
+    key_data, key_sim = jax.random.split(key_init, num=2)
     simulate_fn = make_simulate_fn_fd(ctx)
 
     data_manager = create_data_manager()
-    dxs = data_manager.create_data(ctx.mx, ctx, ctx.batch * ctx.samples, jax.random.PRNGKey(0))
+    dxs = data_manager.create_data(ctx, key_data)
 
-    for _ in range(100):
-        # dxs = create(mx, 2000)
-        opt_state = optim.init(eqx.filter(net, eqx.is_array))
+    for e in range(100):
         t0 = time.perf_counter_ns()
         model, state, loss_value, res = step_single_gpu(
-            dxs, optim, net, opt_state, ctx, keys, simulate_fn, loss_fn_policy_det
+            dxs, net, ctx, key_sim, opt_state, optim, simulate_fn, loss_fn_policy_det
         )
         t1 = time.perf_counter_ns()
-        print("Time [ms] : ", 1e-6*(t1 - t0))
+        print("Time [ms] : ", 1e-6*(t1 - t0), "epoch: ", e)
 
     # run(ctx, optim, simulate_fn)
-
     # runner = Runner()
     # runner.run(ctx, simulate_fn, optimiser)
     # # run(ctx, optimiser, simulate_fn)
+

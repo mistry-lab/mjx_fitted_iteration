@@ -3,7 +3,6 @@ import jax.numpy as jnp
 import mujoco
 from dataclasses import dataclass
 import equinox as eqx
-from jaxtyping import PyTree
 from typing import Callable, Optional, Set
 from mujoco import mjx
 

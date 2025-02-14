@@ -16,7 +16,7 @@ def step_single_gpu(dxs, model, ctx, user_key, state, optim, simulate_fn, loss_f
     :return: Updated model, updated state, and loss value
     """
     (loss_value, res), grads = eqx.filter_value_and_grad(loss_fn, has_aux=True)(
-        model, dxs, ctx, user_key, simulate_fn
+        model, dxs, user_key, simulate_fn
     )
     updates, state = optim.update(grads, state, model)
     model = eqx.apply_updates(model, updates)
@@ -24,7 +24,7 @@ def step_single_gpu(dxs, model, ctx, user_key, state, optim, simulate_fn, loss_f
     return model, state, loss_value, res
 
 @eqx.filter_jit
-def step_multi_gpu(dxs, model, ctx, user_key, state, optim, simulate_fn, loss_fn):
+def step_multi_gpu(dxs, model, ctx, user_key, state, optim, simulate_fn, loss_fn, inner_time, outer_time):
     """
     Performs a single optimization step.
     :param dxs: Data

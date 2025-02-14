@@ -73,7 +73,8 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
             return dx, x, u, costs, t, jnp.any(termination_mask)
 
         params, static = eqx.partition(net, eqx.is_array)
-        return jax.vmap(rollout, in_axes=(0, 0, None))(dxs, key, params)
+        keys = jax.random.split(key, num=ctx.batch)
+        return jax.vmap(rollout, in_axes=(0, 0, None))(dxs, keys, params)
 
     return simulate
 

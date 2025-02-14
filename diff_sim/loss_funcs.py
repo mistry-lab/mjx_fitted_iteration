@@ -1,21 +1,17 @@
 import jax.numpy as jnp
 import equinox as eqx
 import mujoco.mjx as mjx
-from jaxtyping import PyTree
 from typing import Callable
-from diff_sim.context.meta_context import Context
-from diff_sim.nn.base_nn import Network
 
-def loss_fn_policy_det(model: Network, dxs:mjx.Data, ctx: Context, user_key: jnp.ndarray, simulate_fn: Callable) -> tuple[
+def loss_fn_policy_det(model: eqx.Module, dxs:mjx.Data, user_key: jnp.ndarray, simulate_fn: Callable) -> tuple[
     jnp.ndarray, tuple[jnp.ndarray, mjx.Data, jnp.ndarray, jnp.ndarray]]:
     """
         Loss function for the direct analytical policy optimization problem given deterministic dynamics
         Args:
-            params: PyTree, model parameters
-            static: PyTree, static parameters
-            dxs: mjx.Data
-            ctx: Context, context object
+            model: Network model
+            dxs: mjx.Data (batch)
             user_key: jnp.ndarray, random user_key for sub calls
+            simulate_fn: Function to simulate batch of trajectories.
         Returns:
             jnp.ndarray, loss value
 
