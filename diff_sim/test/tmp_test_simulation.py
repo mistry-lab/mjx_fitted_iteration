@@ -112,17 +112,20 @@ if __name__ == "__main__":
     net, optim = ctx.gen_network(ctx.seed), optax.adamw(ctx.lr)
     params, static = eqx.partition(net, eqx.is_array)
 
+    key_init = jax.random.PRNGKey(0)
+    key0, key1 = jax.random.split(key_init, num=2)
+
     N = ctx.batch
-    keys = jax.vmap(lambda x: jax.random.PRNGKey(0))(jnp.arange(N))
+    # keys = jax.vmap(lambda x: jax.random.PRNGKey(0))(jnp.arange(N))
     simulate_fn = make_simulate_fn_fd(ctx)
 
     data_manager = create_data_manager()
-    dxs = data_manager.create_data(ctx, jax.random.PRNGKey(0))
+    dxs = data_manager.create_data(ctx, key0)
    
     opt_state = optim.init(eqx.filter(net, eqx.is_array))
     for _ in range(100):
         t0 = time.perf_counter_ns()
-        model, state, loss_value, res = step_single_gpu(dxs, optim, net, opt_state, ctx, keys, simulate_fn)
+        model, state, loss_value, res = step_single_gpu(dxs, optim, net, opt_state, ctx, key1, simulate_fn)
         t1 = time.perf_counter_ns()
         print("Time [ms] : ", 1e-6*(t1 - t0))
 
