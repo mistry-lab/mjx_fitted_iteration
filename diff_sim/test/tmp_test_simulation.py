@@ -13,7 +13,7 @@ import optax
 from diff_sim.runner_fn import run
 import os
 import diff_sim
-from diff_sim.utils.mj_data_manager import create_data_manager, create
+from diff_sim.utils.mj_data_manager import create_data_manager
 
 jax.config.update("jax_enable_x64", True)
 jax.config.update('jax_default_matmul_precision', 'high')
@@ -48,6 +48,20 @@ if __name__ == "__main__":
             x = self.layers[-1](x).squeeze()
             x = jnp.tanh(x) * 1.
             return x
+        
+    def set_data(mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray) -> mjx.Data:
+        theta1 = jax.random.uniform(key, (1,), minval=0.6, maxval=0.7) # proximal1
+        theta2 = jnp.array([-0.4]) # distal1
+        _, key = jax.random.split(key)
+        theta3 = jax.random.uniform(key, (1,), minval=-.7, maxval=-.6) # proximal2
+        theta4 = jnp.array([0.4]) # distal2
+
+        init_quat = jnp.array([1.0, 0.,0.,0.]) # ball
+        qpos = jnp.concatenate([theta1, theta2, theta3, theta4, init_quat])
+        qvel = jnp.zeros(mx.nv)
+        dx = dx.replace(qpos=dx.qpos.at[:].set(qpos), qvel=dx.qvel.at[:].set(qvel))
+
+        return dx
         
     def set_control(dx, u):
         dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
@@ -87,7 +101,7 @@ if __name__ == "__main__":
         run_cost=lambda m, d: jnp.sum(5.),
         terminal_cost=lambda m, d: jnp.sum(d.ctrl**2),
         control_cost=lambda m, d: jnp.sum(d.ctrl**2),
-        set_data=lambda m, d, k: d,
+        set_data=set_data,
         gen_network=gen_network,
         is_terminal=lambda m, d: jnp.array([False]),
         set_control=lambda d, u: d,
@@ -103,18 +117,13 @@ if __name__ == "__main__":
     simulate_fn = make_simulate_fn_fd(ctx)
 
     data_manager = create_data_manager()
-    dxs = create(mx, ctx.batch)
+    dxs = data_manager.create_data(ctx, jax.random.PRNGKey(0))
    
+    opt_state = optim.init(eqx.filter(net, eqx.is_array))
     for _ in range(100):
-        # dxs = create(mx, 2000)
-        opt_state = optim.init(eqx.filter(net, eqx.is_array))
         t0 = time.perf_counter_ns()
         model, state, loss_value, res = step_single_gpu(dxs, optim, net, opt_state, ctx, keys, simulate_fn)
         t1 = time.perf_counter_ns()
         print("Time [ms] : ", 1e-6*(t1 - t0))
 
     # run(ctx, optim, simulate_fn)
-
-    # runner = Runner()
-    # runner.run(ctx, simulate_fn, optimiser)
-    # run(ctx, optimiser, simulate_fn)
