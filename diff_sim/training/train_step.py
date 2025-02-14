@@ -1,5 +1,19 @@
 import equinox as eqx
 import jax
+import jax.numpy as jnp
+
+def clip_grad_elementwise(grads, clip_value=1.0):
+    """
+    Clips each element of the gradients PyTree to lie within [-clip_value, clip_value].
+
+    Args:
+        grads: A PyTree containing gradient arrays.
+        clip_value: The maximum absolute value for each gradient element.
+
+    Returns:
+        A PyTree with clipped gradients.
+    """
+    return jax.tree_util.tree_map(lambda g: jnp.clip(g, -clip_value, clip_value), grads)
 
 @eqx.filter_jit
 def step_single_gpu(dxs, model, ctx, user_key, state, optim, simulate_fn, loss_fn):

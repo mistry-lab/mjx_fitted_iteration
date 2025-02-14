@@ -17,9 +17,9 @@ class DataManager(eqx.Module):
 
 
     def create_data(
-            self, ctx: Context, key: jnp.ndarray
+            self, ctx: Context, key: jnp.ndarray, custom_batch:int = 0
     ) -> mjx.Data:
-        dxs = self._set_init_compiled(ctx, key)
+        dxs = self._set_init_compiled(ctx, key, custom_batch)
         return dxs
 
     def reset_data(
@@ -32,9 +32,11 @@ class DataManager(eqx.Module):
         return dxs
 
 def create_data_manager() -> DataManager:
-    def set_init(ctx: Context, key: jnp.ndarray) -> mjx.Data:
+    def set_init(ctx: Context, key: jnp.ndarray, custom_batch:int) -> mjx.Data:
         mx = ctx.mx
         batch_size = ctx.batch * ctx.samples
+        if custom_batch != 0:
+            batch_size = custom_batch
         keys = jax.random.split(key, batch_size)
         dxs = jax.vmap(lambda x: mjx.make_data(mx), in_axes=(0,))(jnp.arange(batch_size))
         dxs = jax.vmap(lambda dx, subkey: ctx.set_data(mx, dx, subkey))(dxs, keys)

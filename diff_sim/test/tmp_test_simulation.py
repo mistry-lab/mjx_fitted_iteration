@@ -17,6 +17,7 @@ from diff_sim.training.train_step import step_single_gpu, step_multi_gpu
 from diff_sim.context.meta_context import Context
 from diff_sim.utils.mj_data_manager import create_data_manager
 
+from diff_sim.runner_fn import run
 
 if __name__ == "__main__":
     # Load mj and mjx model
@@ -42,7 +43,7 @@ if __name__ == "__main__":
                 x = layer(x)
                 x = self.act(x)
             x = self.layers[-1](x).squeeze()
-            x = jnp.tanh(x) * 1.
+            # x = jnp.tanh(x) * 1.
             return x
         
     def set_data(mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray) -> mjx.Data:
@@ -55,29 +56,32 @@ if __name__ == "__main__":
         init_quat = jnp.array([1.0, 0.,0.,0.]) # ball
         qpos = jnp.concatenate([theta1, theta2, theta3, theta4, init_quat])
         qvel = jnp.zeros(mx.nv)
+        qvel = qvel.at[0].set(-0.)
+        qvel = qvel.at[2].set(0.)
         dx = dx.replace(qpos=dx.qpos.at[:].set(qpos), qvel=dx.qvel.at[:].set(qvel))
 
         return dx
 
     def set_control(dx, u):
-        dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
+        # dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
+        dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[6].set(u[0]))
         return dx
 
     def gen_network(n: int) -> eqx.Module:
         key = jax.random.PRNGKey(n)
-        return Policy([15, 64, 64, 4], key)
+        return Policy([15, 64, 64, 2], key)
 
     def policy(net: eqx.Module, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
     ) -> tuple[mjx.Data, jnp.ndarray]:
         x = jnp.concatenate([dx.qpos, dx.qvel])
-        u = jax.random.normal(policy_key,(4,)) + net(x, policy_key)
+        u = net(x, policy_key)
 
-        return dx, u
+        return dx, 0.00005 * u
 
     def cst(dx: mjx.Data):
         quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
         costR = jnp.sum((quat_to_mat(dx.qpos[4:8])  - quat_to_mat(quat_ref))**2)
-        return 0.01*costR + 0.0001*jnp.sum(dx.ctrl**2)
+        return 0.01*costR + 0.01*jnp.sum(dx.ctrl**2)
 
     def running_cost(mx: mjx.Model, dx: mjx.Data):
         cost = cst(dx)
@@ -91,12 +95,12 @@ if __name__ == "__main__":
         num_gpu=1,
         seed=0,
         nsteps=100,
-        ntotal=800,
+        ntotal=100,
         epochs=1000,
-        batch=5,
+        batch=50,
         samples=1,
-        eval=10,
-        ctrl_dim=4,
+        eval=30,
+        ctrl_dim=2,
         mx=mjx.put_model(model),
         gen_model=lambda: mujoco.MjModel.from_xml_path(model_path),
         gen_network=gen_network,
@@ -108,25 +112,29 @@ if __name__ == "__main__":
         is_terminal=lambda m, d: jnp.array([False]),
     )
 
-    net, optim = ctx.gen_network(ctx.seed), optax.adamw(ctx.lr)
-    opt_state = optim.init(eqx.filter(net, eqx.is_array))
-    params, static = eqx.partition(net, eqx.is_array)
-    key_init = jax.random.PRNGKey(0)
-    key_data, key_sim = jax.random.split(key_init, num=2)
-    simulate_fn = make_simulate_fn_fd(ctx)
+    # optimiser = optax.adamw(ctx.lr)
+    # opt_state = optim.init(eqx.filter(net, eqx.is_array))
+    # params, static = eqx.partition(net, eqx.is_array)
+    # key_init = jax.random.PRNGKey(0)
+    # key_data, key_sim = jax.random.split(key_init, num=2)
+    # simulate_fn = make_simulate_fn_fd(ctx)
 
-    data_manager = create_data_manager()
-    dxs = data_manager.create_data(ctx, key_data)
+    # data_manager = create_data_manager()
+    # dxs = data_manager.create_data(ctx, key_data)
 
-    for e in range(100):
-        t0 = time.perf_counter_ns()
-        model, state, loss_value, res = step_single_gpu(
-            dxs, net, ctx, key_sim, opt_state, optim, simulate_fn, loss_fn_policy_det
-        )
-        t1 = time.perf_counter_ns()
-        print("Time [ms] : ", 1e-6*(t1 - t0), "epoch: ", e)
+    # for e in range(100):
+    #     t0 = time.perf_counter_ns()
+    #     model, state, loss_value, res = step_single_gpu(
+    #         dxs, net, ctx, key_sim, opt_state, optim, simulate_fn, loss_fn_policy_det
+    #     )
+    #     t1 = time.perf_counter_ns()
+    #     print("Time [ms] : ", 1e-6*(t1 - t0), "epoch: ", e)
 
-    # run(ctx, optim, simulate_fn)
+
+    optimiser = optax.adamw(ctx.lr)
+    simulate_fn = eqx.filter_jit(make_simulate_fn_fd(ctx))
+
+    run(ctx, optimiser, simulate_fn, loss_fn_policy_det)
     # runner = Runner()
     # runner.run(ctx, simulate_fn, optimiser)
     # # run(ctx, optimiser, simulate_fn)

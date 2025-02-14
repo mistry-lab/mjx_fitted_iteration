@@ -1,3 +1,4 @@
+import time
 import wandb
 import mujoco
 from mujoco import viewer
@@ -19,10 +20,10 @@ def run(ctx, optimiser, simulate_fn, loss_fn, headless=False, wb_project="defaul
     """
     try:
         # Initialize wandb
-        wandb.init(anonymous="allow", mode='offline', project=wb_project)
+        wandb.init(anonymous="allow", mode='online', project=wb_project)
 
         # Initial random keys
-        key, subkey = jax.random.split(jax.random.PRNGKey(ctx.seed))
+        key_main = jax.random.PRNGKey(ctx.seed)
 
         # Create MuJoCo model (CPU side) and optional viewer
         model = ctx.gen_model()
@@ -33,15 +34,16 @@ def run(ctx, optimiser, simulate_fn, loss_fn, headless=False, wb_project="defaul
         with jax.default_device(jax.devices()[gpu_id]), viewer_context as view:
             # Create network and optimizer state
             net = ctx.gen_network(ctx.seed)
+            visualise_policy(data, model, view, ctx, net, key_main, simulate_fn)
             opt_state = optimiser.init(eqx.filter(net, eqx.is_array))
 
             # Single-GPU or multi-GPU step function
             step_fn = step_multi_gpu if ctx.num_gpu > 1 else step_single_gpu
 
-            # Prepare data manager and initial dataset
-            key, init_key = jax.random.split(key)
+            # Initial dataset
+            key_main, key_data, key_sim = jax.random.split(key_main, num=3)
             data_manager = create_data_manager()
-            dxs = data_manager.create_data(ctx.mx, ctx, ctx.batch * ctx.samples, init_key)
+            dxs = data_manager.create_data(ctx, key_data)
 
             # Stats tracking
             stats = {"loss": 0.0, "cost": 0.0, "reset": 0.0}
@@ -49,15 +51,15 @@ def run(ctx, optimiser, simulate_fn, loss_fn, headless=False, wb_project="defaul
             log_interval = max(1, ctx.ntotal // ctx.nsteps)
 
             # Helper function to handle logging
-            def log_stats_and_reset(iteration):
+            def log_stats_and_reset(iteration, key_log):
                 """Logs training stats, evaluates policy, then resets stats."""
+                key_data_log, key_sim_log = jax.random.split(key_log,num=2)
                 # Evaluate the policy on a small validation batch
-                dx_vis = data_manager.create_data(ctx.mx, ctx, 2, xkey)
-                user_keys_eval = jax.random.split(tkey, num=2)
+                dxs_log = data_manager.create_data(ctx, key_data_log, custom_batch=2)
 
                 # Example: simulate_fn returns (.., costs, ..) in 4th position
                 # Adjust to match your actual signature
-                _, _, _, costs, _, _ = simulate_fn(dx_vis, user_keys_eval, model)
+                _, _, _, costs, _, _ = simulate_fn(dxs_log, key_sim_log, net)
 
                 # Construct log data
                 log_data = {
@@ -77,39 +79,43 @@ def run(ctx, optimiser, simulate_fn, loss_fn, headless=False, wb_project="defaul
             # Main training loop
             for e in (es := trange(ctx.epochs)):
                 # Generate random keys for this epoch
-                key, xkey, tkey, user_key = jax.random.split(key, num=4)
-                user_keys = jax.random.split(user_key, num=ctx.batch)
+                key_main, key_sim, key_data, key_vis, key_log = jax.random.split(key_main, num=5)
 
                 # One training step
+                t0 = time.perf_counter_ns()
                 net, opt_state, loss_value, res = step_fn(
-                    dxs, optimiser, net, opt_state, ctx, user_keys, simulate_fn, loss_fn
+                    dxs, net, ctx, key_sim, opt_state, optimiser, simulate_fn, loss_fn
                 )
+                t1 = time.perf_counter_ns()
+                # print("Time [ms] : ", 1e-6*(t1 - t0), "epoch: ", e)
                 traj_cost, dxs, terminated, _ = res
 
-                # Accumulate stats
-                stats["loss"] += float(loss_value)
-                stats["cost"] += float(traj_cost)
-                stats["reset"] += float(jnp.sum(terminated))
+                # # Accumulate stats
+                # stats["loss"] += float(loss_value)
+                # stats["cost"] += float(traj_cost)
+                # stats["reset"] += float(jnp.sum(terminated))
+
+                wandb.log({"cost": traj_cost})
 
                 # Reset data for next iteration if needed
-                dxs = data_manager.reset_data(ctx.mx, dxs, ctx, tkey, terminated)
+                dxs = data_manager.reset_data(ctx.mx, dxs, ctx, key_data, terminated)
 
-                # Periodically log statistics
-                if (e + 1) % log_interval == 0:
-                    log_stats_and_reset(e + 1)
+                # # Periodically log statistics
+                # if (e + 1) % log_interval == 0:
+                #     log_stats_and_reset(e + 1, key_log)
 
                 # Check for evaluation/visualization
                 if (e + 1) % ctx.eval == 0 or e == ctx.epochs - 1:
                     if not headless:
-                        visualise_policy(data, model, view, ctx, net, key)
+                        visualise_policy(data, model, view, ctx, net, key_vis, simulate_fn)
                     # Save model checkpoint
-                    task_name = getattr(ctx, "task", "model")
-                    checkpoint_name = f"{task_name}_checkpoint_{e}"
-                    save_model(net, checkpoint_name)
+                    # task_name = getattr(ctx, "task", "model")
+                    # checkpoint_name = f"{task_name}_checkpoint_{e}"
+                    # save_model(net, checkpoint_name)
 
                     # Log the checkpoint name
-                    wandb.log({"latest_model": checkpoint_name})
-                    es.set_postfix({"latest_model": checkpoint_name})
+                    # wandb.log({"latest_model": checkpoint_name})
+                    # es.set_postfix({"latest_model": checkpoint_name})
 
     except KeyboardInterrupt:
         print("Exiting wandb...")
