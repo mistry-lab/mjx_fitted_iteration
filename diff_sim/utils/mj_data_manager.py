@@ -1,4 +1,4 @@
-from typing import Callable, Tuple
+from typing import Callable
 from dataclasses import field
 from mujoco import mjx
 import equinox as eqx
@@ -57,24 +57,10 @@ def create(mx: mjx.Model, batch_size):
 
 def create_data_manager() -> DataManager:
     def set_init(mx: mjx.Model, ctx, batch_size, key: jnp.ndarray) -> mjx.Data:
-        xs = jnp.zeros((batch_size, mx.nq + mx.nv))
         subkeys = jax.random.split(key, batch_size)
-        def set_zero(x,mx):
-            dx = mjx.make_data(mx)
-            qpos = dx.qpos.at[:].set(x[:mx.nq])
-            qvel = dx.qvel.at[:].set(x[mx.nq:])
-            dx = dx.replace(qpos=qpos, qvel=qvel)
-            return dx
-
-        dxs = jax.vmap(set_zero, in_axes=(0, None))(xs, mx)
-        # dxs = jax.vmap(ctx.set_data, in_axes=(None, 0, 0))(mx, dxs, subkeys)
-        # dxs = jax.vmap(mjx.step, in_axes=(None, 0))(mx, dxs)
-
-        # TODO: test if these work
-        # dxs = jax.vmap(lambda x: set_zero(x, mx))(xs)
-        # dxs = jax.vmap(lambda dx, subkey: ctx.set_data(mx, dx, subkey))(dxs, subkeys)
-        # dxs = jax.vmap(lambda dx: mjx.step(mx, dx))(dxs)
-        # dxs = jax.vmap(lambda x: set_zero(x,mx), in_axes=(0,))(jnp.arange(200))
+        dxs = jax.vmap(lambda x: mjx.make_data(mx))(jnp.arange(batch_size))
+        dxs = jax.vmap(lambda dx, subkey: ctx.set_data(mx, dx, subkey))(dxs, subkeys)
+        dxs = jax.vmap(lambda dx: mjx.step(mx, dx))(dxs)
 
         return dxs
 

@@ -3,10 +3,8 @@ import jax.numpy as jnp
 from mujoco import mjx
 import equinox as eqx
 from diff_sim.context.meta_context import Context
-from diff_sim.nn.base_nn import Network
 from typing import Callable
 from diff_sim.simulation.step import make_step_fn, make_step_fn_fd
-from jaxtyping import PyTree
 
 
 # TODO: Shall we keep jaxtyping for PyTree ?
@@ -18,9 +16,8 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
     # TODO: What if ctrl is shape 0 and we use directly forces for example
     def simulate(dxs, key, net):
         def cost_fn(mx: mjx.Model, dx: mjx.Data):
-            ucost = ctx.control_cost(mx, dx)
-            xcost = ctx.run_cost(mx, dx)
-            return jnp.array([xcost + ucost])
+            rcost = ctx.run_cost(mx, dx)
+            return jnp.array([rcost])
 
         def step(carry, _):
             dx, key, params = carry
@@ -80,11 +77,8 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
 
     return simulate
 
-# @eqx.filter_jit
 def make_simulate_fn_fd(ctx: Context):
     return _simulate_fn(ctx, make_step_fn_fd)
 
-
-# @eqx.filter_jit
 def make_simulate_fn(ctx: Context):
     return _simulate_fn(ctx, make_step_fn)

@@ -1,33 +1,29 @@
-import jax
-import jax.numpy as jnp
-import mujoco
-from mujoco import mjx
-from diff_sim.simulation.simulate import make_simulate_fn_fd, make_simulate_fn
-from diff_sim.nn.base_nn import step_single_gpu, step_multi_gpu
-from diff_sim.context.meta_context import Context
-import equinox as eqx
-import time
-from diff_sim.nn.base_nn import Network
-from diff_sim.loss_funcs import loss_fn_policy_det
-import optax
-from diff_sim.runner_fn import run
 import os
-import diff_sim
-from diff_sim.utils.mj_data_manager import create_data_manager, create
-
+import time
+import jax
 jax.config.update("jax_enable_x64", True)
 jax.config.update('jax_default_matmul_precision', 'high')
+import jax.numpy as jnp
+import equinox as eqx
+import mujoco
+from mujoco import mjx
+from mujoco.mjx._src.math import quat_to_mat, axis_angle_to_quat, quat_to_axis_angle
+import optax
+import diff_sim
+from diff_sim.loss_funcs import loss_fn_policy_det
+from diff_sim.simulation.simulate import make_simulate_fn_fd, make_simulate_fn
+from diff_sim.training.train_step import step_single_gpu, step_multi_gpu
+from diff_sim.context.meta_context import Context
+from diff_sim.utils.mj_data_manager import create_data_manager, create
+
 
 if __name__ == "__main__":
     # Load mj and mjx model
     model_path = os.path.join(os.path.dirname(diff_sim.__file__), "xmls", "fingers_ball.xml")
     model = mujoco.MjModel.from_xml_path(model_path)
     mx = mjx.put_model(model)
-    # dxs = jax.vmap(lambda x: mjx.make_data(x[0]), in_axes=(None,0))(mx, jnp.arange(2))
-    dxs = jax.vmap(lambda x: mjx.make_data(mx), in_axes=(0,))(jnp.arange(2))
 
-    # @eqx.filter_jit
-    class Policy(Network):
+    class Policy(eqx.Module):
         layers: list
         act: callable
         dropout: callable
@@ -43,33 +39,43 @@ if __name__ == "__main__":
         def __call__(self, x, key):
             for layer in self.layers[:-1]:
                 x = layer(x)
-                # x = self.act( self.dropout(x, key=key))
                 x = self.act(x)
             x = self.layers[-1](x).squeeze()
             x = jnp.tanh(x) * 1.
             return x
-        
+
     def set_control(dx, u):
         dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
         return dx
 
-    def gen_network(n: int) -> Network:
+    def gen_network(n: int) -> eqx.Module:
         key = jax.random.PRNGKey(n)
-        return Policy([15, 128, 128, 4], key)
-    
-    def policy(net: Network, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
+        return Policy([15, 64, 64, 4], key)
+
+    def policy(net: eqx.Module, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
     ) -> tuple[mjx.Data, jnp.ndarray]:
         x = jnp.concatenate([dx.qpos, dx.qvel])
-        # t = jnp.expand_dims(dx.time, axis=0)
-        # u = net(x)
-        # u = 
-        # u = 0.5*net(x, t)
-        # u += 0.002*jax.random.normal(policy_key, u.shape)
-        # Setup offset
-        # dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
-        u = jax.random.normal(policy_key,4 ) + net(x, policy_key)
+        u = jax.random.normal(policy_key,(4,)) + net(x, policy_key)
 
         return dx, u
+
+    def set_data(mx: mjx.Model, dx: mjx.Data, data_key: jnp.ndarray) -> mjx.Data:
+        qpos = jnp.array([-0.4, 0.44, 0.44, -0.4])
+        qvel = jnp.zeros(mx.nv)
+        dx.replace(qpos=dx.qpos.at[:].set(qpos), qvel=dx.qvel.at[:].set(qvel))
+        return dx
+
+    def cst(dx: mjx.Data):
+        quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
+        costR = jnp.sum((quat_to_mat(dx.qpos[4:8])  - quat_to_mat(quat_ref))**2)
+        return 0.01*costR + 0.0001*jnp.sum(dx.ctrl**2)
+
+    def running_cost(mx: mjx.Model, dx: mjx.Data):
+        cost = cst(dx)
+        return cost
+
+    def terminal_cost(mx: mjx.Model, dx: mjx.Data):
+        return 10*cst(dx)
 
     ctx = Context(
         lr=4e-3,
@@ -84,32 +90,30 @@ if __name__ == "__main__":
         ctrl_dim=4,
         mx=mjx.put_model(model),
         gen_model=lambda: mujoco.MjModel.from_xml_path(model_path),
-        run_cost=lambda m, d: jnp.sum(5.),
-        terminal_cost=lambda m, d: jnp.sum(d.ctrl**2),
-        control_cost=lambda m, d: jnp.sum(d.ctrl**2),
-        set_data=lambda m, d, k: d,
         gen_network=gen_network,
-        is_terminal=lambda m, d: jnp.array([False]),
-        set_control=lambda d, u: d,
+        run_cost=running_cost,
+        terminal_cost=terminal_cost,
+        set_data=set_data,
+        set_control=set_control,
         controller=policy,
-        loss_func=loss_fn_policy_det
+        is_terminal=lambda m, d: jnp.array([False]),
     )
-    
+
     net, optim = ctx.gen_network(ctx.seed), optax.adamw(ctx.lr)
     params, static = eqx.partition(net, eqx.is_array)
-
-    N = ctx.batch
-    keys = jax.vmap(lambda x: jax.random.PRNGKey(0))(jnp.arange(N))
+    keys = jax.vmap(lambda x: jax.random.PRNGKey(0))(jnp.arange(ctx.batch))
     simulate_fn = make_simulate_fn_fd(ctx)
 
     data_manager = create_data_manager()
-    dxs = create(mx, ctx.batch)
-   
+    dxs = data_manager.create_data(ctx.mx, ctx, ctx.batch * ctx.samples, jax.random.PRNGKey(0))
+
     for _ in range(100):
         # dxs = create(mx, 2000)
         opt_state = optim.init(eqx.filter(net, eqx.is_array))
         t0 = time.perf_counter_ns()
-        model, state, loss_value, res = step_single_gpu(dxs, optim, net, opt_state, ctx, keys, simulate_fn)
+        model, state, loss_value, res = step_single_gpu(
+            dxs, optim, net, opt_state, ctx, keys, simulate_fn, loss_fn_policy_det
+        )
         t1 = time.perf_counter_ns()
         print("Time [ms] : ", 1e-6*(t1 - t0))
 
@@ -117,4 +121,4 @@ if __name__ == "__main__":
 
     # runner = Runner()
     # runner.run(ctx, simulate_fn, optimiser)
-    # run(ctx, optimiser, simulate_fn)
+    # # run(ctx, optimiser, simulate_fn)
