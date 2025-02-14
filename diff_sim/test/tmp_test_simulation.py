@@ -105,8 +105,7 @@ if __name__ == "__main__":
         gen_network=gen_network,
         is_terminal=lambda m, d: jnp.array([False]),
         set_control=lambda d, u: d,
-        controller=policy,
-        loss_func=loss_fn_policy_det
+        controller=policy
     )
     
     net, optim = ctx.gen_network(ctx.seed), optax.adamw(ctx.lr)
@@ -125,7 +124,7 @@ if __name__ == "__main__":
     opt_state = optim.init(eqx.filter(net, eqx.is_array))
     for _ in range(100):
         t0 = time.perf_counter_ns()
-        model, state, loss_value, res = step_single_gpu(dxs, optim, net, opt_state, ctx, key1, simulate_fn)
+        model, state, loss_value, res = step_single_gpu(dxs, optim, net, opt_state, key1, loss_fn_policy_det, simulate_fn)
         t1 = time.perf_counter_ns()
         print("Time [ms] : ", 1e-6*(t1 - t0))
 

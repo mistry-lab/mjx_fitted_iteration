@@ -55,22 +55,24 @@ class Network(eqx.Module, ABC):
 
 @staticmethod
 @eqx.filter_jit
-def step_single_gpu(dxs, optim, model, state, ctx, user_key, simulate_fn):
+def step_single_gpu(dxs, optim, model, state, user_key, loss_fn, simulate_fn):
     """
     Performs a single optimization step.
 
     Args:
-        dxs: ..
+        dxs: mjx data (batch).
         optim: Optimizer instance (e.g., from optax).
         model (BasePolicy): The model to update.
         state: Optimizer state.
-        ctx: Context object containing additional information like loss function.
+        user_key: Random key.
+        loss_fn: Loss function.
+        simulate_fn: Function to simulate batch of trajectories.
 
     Returns:
-        Tuple[BasePolicy, state, float]: Updated model, updated state, and loss value.
+        Tuple[BasePolicy, state, float, Tuple]: Updated model, updated state, loss value and traj infos.
     """
-    (loss_value, res), grads = eqx.filter_value_and_grad(ctx.loss_func, has_aux=True)(
-        model, dxs, ctx, user_key, simulate_fn
+    (loss_value, res), grads = eqx.filter_value_and_grad(loss_fn, has_aux=True)(
+        model, dxs, user_key, simulate_fn
     )
     # grads = jax.tree_util.tree_map(lambda x: jnp.nan_to_num(x), grads)
     # grads = clip_grad_elementwise(grads, clip_value=1.0)
