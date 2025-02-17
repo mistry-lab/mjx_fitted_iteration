@@ -95,7 +95,7 @@ def run(ctx, optimiser, simulate_fn, loss_fn, headless=False, wb_project="defaul
                 # stats["cost"] += float(traj_cost)
                 # stats["reset"] += float(jnp.sum(terminated))
 
-                wandb.log({"cost": traj_cost})
+                wandb.log({"loss_value": loss_value})
 
                 # Reset data for next iteration if needed
                 dxs = data_manager.create_data(ctx, key_data)

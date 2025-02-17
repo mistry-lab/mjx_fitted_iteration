@@ -9,7 +9,6 @@ import optax
 from diff_sim.traj_opt.policy import (
     simulate_trajectories, make_loss_multi_init, make_step_fn, build_fd_cache
 )
-from diff_sim.nn.base_nn import Network
 from diff_sim.utils.math_helper import angle_axis_to_quaternion, quaternion_to_angle_axis
 
 
@@ -63,7 +62,7 @@ def generate_inital_conditions(key):
 
     return jnp.concatenate([q0,q1,theta])
 
-class PolicyNet(Network):
+class PolicyNet(equinox.Module):
     layers: list
     act: callable
 
@@ -118,9 +117,9 @@ if __name__ == "__main__":
         pos_finger = dx.qpos[2]
         u = dx.ctrl
 
-        touch = dx.sensordata[0]
-        p_finger = dx.sensordata[1:4]
-        p_target = dx.sensordata[4:7]
+        # touch = dx.sensordata[0]
+        # p_finger = dx.sensordata[1:4]
+        # p_target = dx.sensordata[4:7]
 
         # l1, l2 = 0.17, 0.161
         # q0 = dx.qpos[0]
@@ -138,14 +137,16 @@ if __name__ == "__main__":
         # p_target = jnp.array([xt, yt])
         # p_finger = jnp.array([x_, y_])
 
-        return 0.00005 * jnp.sum(u ** 2) + 0.1 * jnp.sum((p_finger - p_target)**2) + 0.001 * touch * pos_finger **2
+        # return 0.00005 * jnp.sum(u ** 2) + 0.1 * jnp.sum((p_finger - p_target)**2) + 0.001 * touch * pos_finger **2
+        return 0.002 * jnp.sum(u ** 2) + 0.001 * pos_finger ** 2
 
     def terminal_cost(dx):
         pos_finger = dx.qpos[2]
-        touch = dx.sensordata[0]
-        p_finger = dx.sensordata[1:4]
-        p_target = dx.sensordata[4:7]
-        return  10. * jnp.sum((p_finger - p_target)**2) + 4.* touch * pos_finger**2
+        # touch = dx.sensordata[0]
+        # p_finger = dx.sensordata[1:4]
+        # p_target = dx.sensordata[4:7]
+        # return  10. * jnp.sum((p_finger - p_target)**2) + 4.* touch * pos_finger**2
+        return 4 * pos_finger ** 2
 
     def set_control(dx, u):
         return dx.replace(ctrl=dx.ctrl.at[:].set(u))
@@ -170,7 +171,7 @@ if __name__ == "__main__":
     # fd_cache = build_fd_cache(dx_template, jnp.zeros((mx.nu,)), ...)
 
     # Create your policy net, optimizer, and do gradient descent
-    nn = PolicyNet([13, 128,256, 128, 2], key=jax.random.PRNGKey(0))
+    nn = PolicyNet([6, 128,256, 128, 2], key=jax.random.PRNGKey(0))
     adam = optax.adamw(3.e-3)
     opt_state = adam.init(equinox.filter(nn, equinox.is_array))
 

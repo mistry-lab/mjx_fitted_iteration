@@ -1,8 +1,8 @@
 import os
 import time
 import jax
-# jax.config.update("jax_enable_x64", True)
-# jax.config.update('jax_default_matmul_precision', 'high')
+jax.config.update("jax_enable_x64", True)
+jax.config.update('jax_default_matmul_precision', 'high')
 import jax.numpy as jnp
 import equinox as eqx
 import mujoco
@@ -76,7 +76,7 @@ if __name__ == "__main__":
 
     def gen_network(n: int) -> eqx.Module:
         key = jax.random.PRNGKey(n)
-        return Policy([6, 256, 128, 256, 2], key)
+        return Policy([6, 128, 256, 128, 2], key)
 
 
     def policy(net: eqx.Module, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
@@ -94,16 +94,19 @@ if __name__ == "__main__":
         pos_finger = dx.qpos[2]
         return 4. * pos_finger**2
 
+    # TODO: Add terminal time to is_terminal function
+    # Is terminal function only for state, not time condition, 
+    # handled internally in time.
     def is_terminal(mx: mjx.Model, dx: mjx.Data):
-        return jnp.array([(dx.time / mx.opt.timestep) > (100-1)])
+        return jnp.array([False])
 
 
     ctx = Context(
-        lr=4e-3,
+        lr=3e-3,
         num_gpu=1,
         seed=0,
-        nsteps=100,
-        ntotal=100,
+        nsteps=75,
+        ntotal=75,
         epochs=1000,
         batch=200,
         samples=1,
