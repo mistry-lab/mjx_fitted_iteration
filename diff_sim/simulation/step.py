@@ -8,13 +8,14 @@ from diff_sim.context.meta_context import Context
 from mujoco import mjx
 
 
-def upscale(x):
-    if "dtype" in dir(x):
-        if x.dtype == jnp.int32:
-            return jnp.int64(x)
-        elif x.dtype == jnp.float32:
-            return jnp.float64(x)
+def _upscale(x):
     return x
+    # if "dtype" in dir(x):
+    #     if x.dtype == jnp.int32:
+    #         return jnp.int64(x)
+    #     elif x.dtype == jnp.float32:
+    #         return jnp.float64(x)
+    # return x
 
 # -------------------------------------------------------------
 # Step function with automatic derivative
@@ -46,6 +47,7 @@ def make_step_fn_fd(ctx: Context):
     mx = ctx.mx
     set_control_fn = ctx.set_control
     dx_tmp = mjx.make_data(ctx.mx) # Temporary pytree data
+    dx_tmp = jax.tree.map(_upscale, dx_tmp)
     fd_cache = build_fd_cache(ctx.mx, dx_tmp, ctx.target_fields, ctx.ctrl_dim, ctx.eps)
     del dx_tmp
 

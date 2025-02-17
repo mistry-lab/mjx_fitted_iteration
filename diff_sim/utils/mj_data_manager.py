@@ -4,8 +4,17 @@ from mujoco import mjx
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-
 from diff_sim.context.meta_context import Context
+
+def _upscale(x):
+    return x
+    # if 'dtype' in dir(x):
+    #     if x.dtype == jnp.int32:
+    #         return jnp.int64(x)
+    #     elif x.dtype == jnp.float32:
+    #         return jnp.float64(x)
+    # return x
+
 
 class DataManager(eqx.Module):
     _set_init_compiled: Callable[[mjx.Model, Context, int, jnp.ndarray], mjx.Data] = field(default=None)
@@ -37,8 +46,10 @@ def create_data_manager() -> DataManager:
         batch_size = ctx.batch * ctx.samples
         if custom_batch != 0:
             batch_size = custom_batch
+
         keys = jax.random.split(key, batch_size)
         dxs = jax.vmap(lambda x: mjx.make_data(mx), in_axes=(0,))(jnp.arange(batch_size))
+        dxs = jax.tree.map(_upscale, dxs)
         dxs = jax.vmap(lambda dx, subkey: ctx.set_data(mx, dx, subkey))(dxs, keys)
         dxs = jax.vmap(lambda dx: mjx.step(mx, dx))(dxs)
 

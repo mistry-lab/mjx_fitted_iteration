@@ -98,7 +98,7 @@ def run(ctx, optimiser, simulate_fn, loss_fn, headless=False, wb_project="defaul
                 wandb.log({"cost": traj_cost})
 
                 # Reset data for next iteration if needed
-                dxs = data_manager.reset_data(ctx.mx, dxs, ctx, key_data, terminated)
+                dxs = data_manager.create_data(ctx, key_data)
 
                 # # Periodically log statistics
                 # if (e + 1) % log_interval == 0:
