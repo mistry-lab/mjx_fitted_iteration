@@ -62,25 +62,25 @@ if __name__ == "__main__":
         return dx
 
     def set_control(dx, u):
-        # dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
-        dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[6].set(u[0]))
+        dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
+        # dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[6].set(u[0]))
         return dx
 
     def gen_network(n: int) -> eqx.Module:
         key = jax.random.PRNGKey(n)
-        return Policy([15, 64, 64, 2], key)
+        return Policy([15, 64,128,64, 4], key)
 
     def policy(net: eqx.Module, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
     ) -> tuple[mjx.Data, jnp.ndarray]:
         x = jnp.concatenate([dx.qpos, dx.qvel])
         u = net(x, policy_key)
 
-        return dx, 0.00005 * u
+        return dx, u
 
     def cst(dx: mjx.Data):
         quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
         costR = jnp.sum((quat_to_mat(dx.qpos[4:8])  - quat_to_mat(quat_ref))**2)
-        return 0.01*costR + 0.01*jnp.sum(dx.ctrl**2)
+        return 0.01*costR + 0.001*jnp.sum(dx.ctrl**2)
 
     def running_cost(mx: mjx.Model, dx: mjx.Data):
         cost = cst(dx)
@@ -98,8 +98,8 @@ if __name__ == "__main__":
         epochs=1000,
         batch=50,
         samples=1,
-        eval=30,
-        ctrl_dim=2,
+        eval=5,
+        ctrl_dim=4,
         mx=mjx.put_model(model),
         gen_model=lambda: mujoco.MjModel.from_xml_path(model_path),
         gen_network=gen_network,

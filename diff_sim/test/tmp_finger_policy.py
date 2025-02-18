@@ -88,7 +88,7 @@ if __name__ == "__main__":
     def running_cost(mx: mjx.Model, dx: mjx.Data):
         pos_finger = dx.qpos[2]
         u = dx.ctrl
-        return 0.001 * jnp.sum(u ** 2) + 0.001 * pos_finger **2
+        return 0.002 * jnp.sum(u ** 2) + 0.001 * pos_finger **2
 
     def terminal_cost(mx: mjx.Model, dx: mjx.Data):
         pos_finger = dx.qpos[2]
@@ -105,12 +105,12 @@ if __name__ == "__main__":
         lr=3e-3,
         num_gpu=1,
         seed=0,
-        nsteps=75,
-        ntotal=75,
-        epochs=1000,
-        batch=200,
+        nsteps=10,
+        ntotal=10,
+        epochs=2,
+        batch=1,
         samples=1,
-        eval=30,
+        eval=10,
         ctrl_dim=2,
         mx=mjx.put_model(model),
         gen_model=lambda: mujoco.MjModel.from_xml_path(model_path),

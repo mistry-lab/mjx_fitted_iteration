@@ -20,47 +20,67 @@ def upscale(x):
             return jnp.float64(x)
     return x
 
-def generate_inital_conditions(key):
+def generate_inital_conditions(key: jnp.ndarray):
     # Solution of IK
     _, key = jax.random.split(key)
-    sign = 2.*jax.random.bernoulli(key, 0.5) - 1.
+    sign = 2. * jax.random.bernoulli(key, 0.5) - 1.
 
     # Reference target position in spinner local frame R_s
+    r_l = 0.22
     _, key = jax.random.split(key, num=2)
-    theta_l = jax.random.uniform(key, (1,), minval=0.6, maxval=2.5) # Polar Coord
-    l_spinner = 0.22
-    # r = jax.random.uniform(key, (1,), minval=l_spinner + 0.01, maxval=l_spinner + 0.01)
-    r_l = l_spinner
-    x_s,y_s = r_l*jnp.cos(theta_l), r_l*jnp.sin(theta_l) # Cartesian in R_l
-    
+    theta_l = jax.random.uniform(key, (1,), minval=0.6, maxval=2.5)  # Polar Coord
+    x_s, y_s = r_l * jnp.cos(theta_l), r_l * jnp.sin(theta_l)  # Cartesian in R_l
+
     # Reference target position in finger frame R_f
-    x, y = x_s, y_s - 0.39
-
     # Inverse kinematic formula
+    x, y = x_s, y_s - 0.39
     l1, l2 = 0.17, 0.161
-    q1 = sign * jnp.arccos( (x**2 + y**2 - l1**2 - l2**2)/(2*l1*l2) )
-    q0 = jnp.arctan2(y,x) - jnp.arctan2(l2 * jnp.sin(q1), l1 + l2*jnp.cos(q1))
-
-    # dx = dx.replace(qpos=dx.qpos.at[0].set(q0[0]))
-    # dx = dx.replace(qpos=dx.qpos.at[1].set(q1[0]))
-
-    # Set Mocap quaternion
-    _, key = jax.random.split(key)
-    theta_cap = jax.random.uniform(key, (1,), minval=0., maxval=3.14)
-    axis = jnp.array([0, -theta_cap[0], 0])
-    quat = angle_axis_to_quaternion(axis)
-    # dx = dx.replace(mocap_quat=dx.m
-    #                 ocap_quat.at[:].set(quat))
-    pos = jnp.array([-0.2, 0., -0.4])
-    # dx = dx.replace(mocap_pos=dx.mocap_pos.at[:].set(pos))
-
+    q1 = sign * jnp.arccos((x ** 2 + y ** 2 - l1 ** 2 - l2 ** 2) / (2 * l1 * l2))
+    q0 = jnp.arctan2(y, x) - jnp.arctan2(l2 * jnp.sin(q1), l1 + l2 * jnp.cos(q1))
     _, key = jax.random.split(key, num=2)
     theta = jax.random.uniform(key, (1,), minval=-0.9, maxval=0.9)
-    # dx = dx.replace(qpos=dx.qpos.at[2].set(theta[0]))
-
-    # jax.debug.breakpoint()
 
     return jnp.concatenate([q0,q1,theta])
+
+# def generate_inital_conditions(key):
+#     # Solution of IK
+#     _, key = jax.random.split(key)
+#     sign = 2.*jax.random.bernoulli(key, 0.5) - 1.
+
+#     # Reference target position in spinner local frame R_s
+#     _, key = jax.random.split(key, num=2)
+#     theta_l = jax.random.uniform(key, (1,), minval=0.6, maxval=2.5) # Polar Coord
+#     l_spinner = 0.22
+#     # r = jax.random.uniform(key, (1,), minval=l_spinner + 0.01, maxval=l_spinner + 0.01)
+#     r_l = l_spinner
+#     x_s,y_s = r_l*jnp.cos(theta_l), r_l*jnp.sin(theta_l) # Cartesian in R_l
+    
+#     # Reference target position in finger frame R_f
+#     x, y = x_s, y_s - 0.39
+
+#     # Inverse kinematic formula
+#     l1, l2 = 0.17, 0.161
+#     q1 = sign * jnp.arccos( (x**2 + y**2 - l1**2 - l2**2)/(2*l1*l2) )
+#     q0 = jnp.arctan2(y,x) - jnp.arctan2(l2 * jnp.sin(q1), l1 + l2*jnp.cos(q1))
+
+#     # dx = dx.replace(qpos=dx.qpos.at[0].set(q0[0]))
+#     # dx = dx.replace(qpos=dx.qpos.at[1].set(q1[0]))
+
+#     # Set Mocap quaternion
+#     # _, key = jax.random.split(key)
+#     # theta_cap = jax.random.uniform(key, (1,), minval=0., maxval=3.14)
+#     # axis = jnp.array([0, -theta_cap[0], 0])
+#     # quat = angle_axis_to_quaternion(axis)
+#     # # dx = dx.replace(mocap_quat=dx.m
+#     # #                 ocap_quat.at[:].set(quat))
+#     # pos = jnp.array([-0.2, 0., -0.4])
+#     # # dx = dx.replace(mocap_pos=dx.mocap_pos.at[:].set(pos))
+
+#     _, key = jax.random.split(key, num=2)
+#     theta = jax.random.uniform(key, (1,), minval=-0.9, maxval=0.9)
+#     # dx = dx.replace(qpos=dx.qpos.at[2].set(theta[0]))
+
+#     return jnp.concatenate([q0,q1,theta])
 
 class PolicyNet(equinox.Module):
     layers: list
@@ -96,10 +116,10 @@ if __name__ == "__main__":
     # # repeat qpos_inits to match to size 164
     # qpos_inits = jnp.repeat(qpos_inits, 64, axis=0)
     # qpos_inits += 0.01 * jax.random.normal(jax.random.PRNGKey(0), qpos_inits.shape)
-    init_key = jax.random.PRNGKey(10) 
-    n_batch = 200
+    init_key = jax.random.PRNGKey(0) 
+    n_batch = 1
     n_samples = 1
-    Nsteps, nu = 75, 2
+    Nsteps, nu = 10, 2
     keys = jax.random.split(init_key, n_batch)  # Generate 100 random keys
     qpos_inits0 = jax.vmap(generate_inital_conditions, in_axes=(0))(keys)
 
@@ -178,7 +198,7 @@ if __name__ == "__main__":
     # Same "Policy" class as before
     from diff_sim.traj_opt.policy import Policy
     optimizer = Policy(loss=loss_fn)
-    optimal_nn = optimizer.solve(nn, adam, opt_state, batch_size=n_batch*n_samples, max_iter=50)
+    optimal_nn = optimizer.solve(nn, adam, opt_state, batch_size=n_batch*n_samples, max_iter=2)
 
     fd_cache = build_fd_cache(dx_template)
     step_fn = make_step_fn(mx, set_control, fd_cache)
@@ -199,4 +219,4 @@ if __name__ == "__main__":
     # visualize the trajectories
     from diff_sim.utils.mj_viewers import visualise_traj_generic
     data = mujoco.MjData(model)
-    visualise_traj_generic(jnp.array(states_batched[:,:,:-1]), data, model)
+    visualise_traj_generic(jnp.array(states_batched[:,:,:]), data, model)

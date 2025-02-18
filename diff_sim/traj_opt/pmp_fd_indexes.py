@@ -19,7 +19,7 @@ def upscale(x):
             return jnp.float64(x)
     return x
 
-
+@jax.tree_util.register_static
 @dataclass(frozen=True)
 class FDCache:
     """Holds all the precomputed info needed by the custom FD-based backward pass."""
