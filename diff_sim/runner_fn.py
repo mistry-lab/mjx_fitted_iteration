@@ -117,25 +117,20 @@ def run(
                 net, opt_state, loss_value, res = step_fn(
                     dxs, net, ctx, key_sim, opt_state, optimiser, simulate_fn, loss_fn
                 )
-                jax.debug.print("loss_value : {}", loss_value)
                 t1 = time.perf_counter_ns()
-                # print("Time [ms] : ", 1e-6*(t1 - t0), "epoch: ", e)
-                traj_cost, dxs, terminated, _ = res
+                _, dxs, _, _ = res
 
-                # # Accumulate stats
+                # (Re)Create data for the next iteration if needed
+                # key_main, key_data = jax.random.split(key_main)
+                dxs = data_manager.create_data(ctx, jax.random.PRNGKey(ctx.seed))
+
+                # Log step metrics
+                logger.log({"loss": float(loss_value), "time_ms": (t1 - t0) * 1e-6})
+                es.set_postfix({"loss":float(loss_value)})
+                # Accumulate stats
                 # stats["loss"] += float(loss_value)
                 # stats["cost"] += float(traj_cost)
                 # stats["reset"] += float(jnp.sum(terminated))
-
-                wandb.log({"loss_value": loss_value})
-
-                # Reset data for next iteration if needed
-                dxs = data_manager.create_data(ctx, jax.random.PRNGKey(ctx.seed))
-
-                # Main training loop
-                for epoch in trange(ctx.epochs):
-                    # Split keys
-                    key_main, key_sim = jax.random.split(key_main)
 
                 # Check for evaluation/visualization
                 if (e + 1) % ctx.eval == 0 or e == ctx.epochs - 1:
@@ -147,30 +142,7 @@ def run(
                     # task_name = getattr(ctx, "task", "model")
                     # checkpoint_name = f"{task_name}_checkpoint_{e}"
                     # save_model(net, checkpoint_name)
-
-                    # Log step metrics
-                    logger.log({"loss": float(loss_value), "time_ms": (t1 - t0) * 1e-6})
-
-                    # Unpack results
-                    _, dxs, terminated, _ = res
-                    # Optionally accumulate stats here if you want a custom aggregator
-
-                    # (Re)Create data for the next iteration if needed
-                    key_main, key_data = jax.random.split(key_main)
-                    dxs = data_manager.create_data(ctx, key_data)
-
-                    # Periodic evaluation/visualization
-                    if (epoch + 1) % ctx.eval == 0 or epoch == ctx.epochs - 1:
-                        if not headless:
-                            key_main, key_vis = jax.random.split(key_main)
-                            visualise_policy(
-                                data, model, view, ctx, net, key_vis, simulate_fn_visu
-                            )
-
-                        # Optionally save or log model checkpoint
-                        # checkpoint_name = f"checkpoint_{epoch}"
-                        # save_model(net, checkpoint_name)
-                        # logger.log({"latest_model": checkpoint_name})
+                    # logger.log({"latest_model": checkpoint_name})
 
     except KeyboardInterrupt:
         print("Exiting due to user interrupt...")
