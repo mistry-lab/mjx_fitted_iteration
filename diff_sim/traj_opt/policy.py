@@ -253,6 +253,7 @@ def simulate_trajectories(
         dx0 = jax.tree_map(upscale, dx0)
         dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(qpos_init))
         dx0 = dx0.replace(qvel=dx0.qvel.at[:].set(qvel_init))
+        # dx0 = mjx.step(mx, dx0)
 
         # Define the scanning function for a single rollout
         def scan_step_fn(carry, _):
@@ -265,14 +266,15 @@ def simulate_trajectories(
             noise = 0. * jax.random.normal(subkey, mx.nu)
             # jax.debug.print("noise : {}", noise)
             u = model(x, dx.time) + noise # policy output
-
+            dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
             c = running_cost_fn(dx)
             dx = step_fn(dx, u)  # FD-based MuJoCo step
             state = jnp.concatenate([dx.qpos, dx.qvel, dx.sensordata])
-            return (dx,key), (state, c)
+            return (dx,key), (state, c, u)
 
         key, subkey = jax.random.split(key)
-        (dx_final, _), (states, costs) = jax.lax.scan(scan_step_fn, (dx0,subkey), length=length)
+        (dx_final, _), (states, costs, u) = jax.lax.scan(scan_step_fn, (dx0,subkey), length=length-1)
+
         total_cost = jnp.sum(costs) + terminal_cost_fn(dx_final)
         return states, total_cost
 
@@ -330,6 +332,7 @@ def make_loss_multi_init(
             running_cost_fn, terminal_cost_fn, step_fn,
             params, static, length,keys
         )
+
         costs = costs_batched.reshape(batch_size, sample_size)
         exp_sum_costs = jnp.mean(costs, axis=-1)
         total_cost = jnp.mean(exp_sum_costs)

@@ -46,60 +46,64 @@ if __name__ == "__main__":
             return x
         
     def set_data(mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray) -> mjx.Data:
-        theta1 = jax.random.uniform(key, (1,), minval=0.6, maxval=0.7) # proximal1
-        theta2 = jnp.array([-0.4]) # distal1
+        theta1 = jax.random.uniform(key, (1,), minval=0.45, maxval=0.7) # proximal1
+        theta2 = jnp.array([-0.6]) # distal1
         _, key = jax.random.split(key)
-        theta3 = jax.random.uniform(key, (1,), minval=-.7, maxval=-.6) # proximal2
-        theta4 = jnp.array([0.4]) # distal2
+        theta3 = jax.random.uniform(key, (1,), minval=-.7, maxval=-.45) # proximal2
+        theta4 = jnp.array([0.6]) # distal2
 
-        init_quat = jnp.array([1.0, 0.,0.,0.]) # ball
-        qpos = jnp.concatenate([theta1, theta2, theta3, theta4, init_quat])
+        # init_quat = jnp.array([1.0, 0.,0.,0.]) # ball
+        _, key = jax.random.split(key)
+        init_angl = jax.random.uniform(key, (1,), minval=-1.2, maxval=1.2) # proximal2
+        qpos = jnp.concatenate([theta1, theta2, theta3, theta4, init_angl])
         qvel = jnp.zeros(mx.nv)
         qvel = qvel.at[0].set(-0.)
         qvel = qvel.at[2].set(0.)
+
         dx = dx.replace(qpos=dx.qpos.at[:].set(qpos), qvel=dx.qvel.at[:].set(qvel))
 
         return dx
 
     def set_control(dx, u):
-        # dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
-        dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[6].set(u[0]))
+        dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
+        # dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[6].set(u[0]))
         return dx
 
     def gen_network(n: int) -> eqx.Module:
         key = jax.random.PRNGKey(n)
-        return Policy([15, 64, 64, 2], key)
+        return Policy([10, 128,256,128, 4], key)
 
     def policy(net: eqx.Module, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
     ) -> tuple[mjx.Data, jnp.ndarray]:
         x = jnp.concatenate([dx.qpos, dx.qvel])
         u = net(x, policy_key)
 
-        return dx, 0.00005 * u
+        return dx, u
 
-    def cst(dx: mjx.Data):
-        quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
-        costR = jnp.sum((quat_to_mat(dx.qpos[4:8])  - quat_to_mat(quat_ref))**2)
-        return 0.01*costR + 0.01*jnp.sum(dx.ctrl**2)
 
     def running_cost(mx: mjx.Model, dx: mjx.Data):
-        cost = cst(dx)
-        return cost
+        # quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
+        # costR = jnp.sum((quat_to_mat(dx.qpos[4:8])  - quat_to_mat(quat_ref))**2)
+        c = dx.qpos[4] - 2.35
+        return  0.001*c**2 + 0.*jnp.sum(dx.ctrl**2)
 
     def terminal_cost(mx: mjx.Model, dx: mjx.Data):
-        return 10*cst(dx)
+        # quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
+        # costR = jnp.sum((quat_to_mat(dx.qpos[4:8])  - quat_to_mat(quat_ref))**2)
+        c = dx.qpos[4] - 2.35
+        return 4.*c**2
 
     ctx = Context(
-        lr=4e-3,
+        lr=1.e-3,
         num_gpu=1,
         seed=0,
-        nsteps=100,
-        ntotal=100,
+        nsteps=200,
+        ntotal=200,
         epochs=1000,
         batch=50,
         samples=1,
-        eval=30,
-        ctrl_dim=2,
+        eval=15,
+        ctrl_dim=4,
         mx=mjx.put_model(model),
         gen_model=lambda: mujoco.MjModel.from_xml_path(model_path),
         gen_network=gen_network,

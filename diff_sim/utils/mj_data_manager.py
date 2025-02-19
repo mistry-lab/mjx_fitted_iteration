@@ -51,7 +51,7 @@ def create_data_manager() -> DataManager:
         dxs = jax.vmap(lambda x: mjx.make_data(mx), in_axes=(0,))(jnp.arange(batch_size))
         dxs = jax.tree.map(_upscale, dxs)
         dxs = jax.vmap(lambda dx, subkey: ctx.set_data(mx, dx, subkey))(dxs, keys)
-        dxs = jax.vmap(lambda dx: mjx.step(mx, dx))(dxs)
+        # dxs = jax.vmap(lambda dx: mjx.step(mx, dx))(dxs)
 
         return dxs
 

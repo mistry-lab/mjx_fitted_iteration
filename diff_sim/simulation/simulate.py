@@ -46,7 +46,8 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
 
             # TODO: Rethink the cost mechanism. Could be improve
             x = jnp.concatenate([x_init.reshape(1, -1), x], axis=0)
-            ts = jnp.concatenate([jnp.array([ctx.mx.opt.timestep]), ts], axis=0)
+            # ts = jnp.concatenate([jnp.array([ctx.mx.opt.timestep]), ts], axis=0)
+            ts = jnp.concatenate([jnp.array([0.]), ts], axis=0)
             costs_r = jnp.concatenate(
                 [costs_r, jnp.expand_dims(ctx.run_cost(ctx.mx, dx), axis=0)], axis=0
             )
@@ -56,7 +57,7 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
             )
 
             terminated_time_mask = jax.vmap(
-                lambda t: (t / ctx.mx.opt.timestep) >= ctx.ntotal
+                lambda t: (t / ctx.mx.opt.timestep) >= (ctx.ntotal - 1)
             )(ts)
             # Replace cost_r with cost_t values when necessary
             costs_r = jnp.where(terminated_time_mask, costs_t, costs_r)
@@ -85,9 +86,38 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
     return simulate
 
 
+def _simulate_simple(ctx: Context, make_step_fn=Callable):
+    step_fn = make_step_fn(ctx)  # Create step function
+
+    def simulate(dxs, key, net):
+        def step(carry, _):
+            dx, key, params = carry
+            model = eqx.combine(params, static)
+            key, subkey = jax.random.split(key)
+            dx, u = ctx.controller(model, ctx.mx, dx, subkey)  # Fix input/output
+            dx = ctx.set_control(dx, u)
+            dx = step_fn(dx, u)
+            x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
+            return (dx, key, params), x
+
+        def rollout(dx, key, params):
+            x_init = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
+            (_, _, _), x = jax.lax.scan(step, (dx, key, params), None, length=ctx.ntotal - 1)
+            x = jnp.concatenate([x_init.reshape(1, -1), x], axis=0)
+            return x
+
+        params, static = eqx.partition(net, eqx.is_array)
+        keys = jax.random.split(key, num=dxs.qpos.shape[0])
+        return jax.vmap(rollout, in_axes=(0, 0, None))(dxs, keys, params)
+
+    return simulate
+
 def make_simulate_fn_fd(ctx: Context):
     return _simulate_fn(ctx, make_step_fn_fd)
 
 
 def make_simulate_fn(ctx: Context):
     return _simulate_fn(ctx, make_step_fn)
+
+def make_simulate_fn_simple(ctx: Context):
+    return _simulate_simple(ctx, make_step_fn)
