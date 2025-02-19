@@ -31,11 +31,11 @@ class DataManager(eqx.Module):
         return dxs
 
     def reset_data(
-            self, mx: mjx.Model, dxs: mjx.Data, ctx: Context, key: jnp.ndarray, terminated: jnp.ndarray
+            self, dxs: mjx.Data, ctx: Context, key: jnp.ndarray, terminated: jnp.ndarray
     ) -> mjx.Data:
         indices_to_reset = jnp.where(terminated)[0]
         if indices_to_reset.size > 0:
-            new_dxs = self.create_data(mx, ctx, indices_to_reset.size, key)
+            new_dxs = self.create_data(ctx, key, indices_to_reset.size)
             dxs = self._replace_indices_compiled(dxs, indices_to_reset, new_dxs)
         return dxs
 
