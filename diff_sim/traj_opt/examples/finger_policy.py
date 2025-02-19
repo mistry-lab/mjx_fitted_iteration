@@ -138,7 +138,7 @@ if __name__ == "__main__":
         # p_finger = jnp.array([x_, y_])
 
         # return 0.00005 * jnp.sum(u ** 2) + 0.1 * jnp.sum((p_finger - p_target)**2) + 0.001 * touch * pos_finger **2
-        return 0.002 * jnp.sum(u ** 2) + 0.001 * pos_finger ** 2
+        return 0.0002 * jnp.sum(u ** 2) + 0.001 * pos_finger ** 2
 
     def terminal_cost(dx):
         pos_finger = dx.qpos[2]
@@ -171,7 +171,7 @@ if __name__ == "__main__":
     # fd_cache = build_fd_cache(dx_template, jnp.zeros((mx.nu,)), ...)
 
     # Create your policy net, optimizer, and do gradient descent
-    nn = PolicyNet([6, 128,256, 128, 2], key=jax.random.PRNGKey(0))
+    nn = PolicyNet([6, 64,128, 128, 64, 2], key=jax.random.PRNGKey(0))
     adam = optax.adamw(3.e-3)
     opt_state = adam.init(equinox.filter(nn, equinox.is_array))
 
@@ -199,4 +199,4 @@ if __name__ == "__main__":
     # visualize the trajectories
     from diff_sim.utils.mj_viewers import visualise_traj_generic
     data = mujoco.MjData(model)
-    visualise_traj_generic(jnp.array(states_batched[:,:,:-1]), data, model)
+    visualise_traj_generic(jnp.array(states_batched), data, model)

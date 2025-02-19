@@ -266,8 +266,8 @@ def simulate_trajectories(
             # jax.debug.print("noise : {}", noise)
             u = model(x, dx.time) + noise # policy output
 
-            dx = step_fn(dx, u)  # FD-based MuJoCo step
             c = running_cost_fn(dx)
+            dx = step_fn(dx, u)  # FD-based MuJoCo step
             state = jnp.concatenate([dx.qpos, dx.qvel, dx.sensordata])
             return (dx,key), (state, c)
 
@@ -303,6 +303,7 @@ def make_loss_multi_init(
     """
 
     dx_ref = mjx.make_data(mx)
+    dx_ref = jax.tree_map(upscale, dx_ref)
 
     # Build an FD cache once, as usual
     fd_cache = build_fd_cache(
