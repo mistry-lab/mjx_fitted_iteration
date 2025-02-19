@@ -20,7 +20,7 @@ from diff_sim.runner_fn import run
 
 if __name__ == "__main__":
     # Load mj and mjx model
-    model_path = os.path.join(os.path.dirname(diff_sim.__file__), "xmls", "fingers_ball.xml")
+    model_path = os.path.join(os.path.dirname(diff_sim.__file__), "xmls", "ant.xml")
     model = mujoco.MjModel.from_xml_path(model_path)
     mx = mjx.put_model(model)
 
@@ -46,64 +46,65 @@ if __name__ == "__main__":
             return x
         
     def set_data(mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray) -> mjx.Data:
-        theta1 = jax.random.uniform(key, (1,), minval=0.45, maxval=0.7) # proximal1
-        theta2 = jnp.array([-0.6]) # distal1
-        _, key = jax.random.split(key)
-        theta3 = jax.random.uniform(key, (1,), minval=-.7, maxval=-.45) # proximal2
-        theta4 = jnp.array([0.6]) # distal2
+        # theta1 = jax.random.uniform(key, (1,), minval=0.45, maxval=0.7) # proximal1
+        # theta2 = jnp.array([-0.6]) # distal1
+        # _, key = jax.random.split(key)
+        # theta3 = jax.random.uniform(key, (1,), minval=-.7, maxval=-.45) # proximal2
+        # theta4 = jnp.array([0.6]) # distal2
 
-        # init_quat = jnp.array([1.0, 0.,0.,0.]) # ball
-        _, key = jax.random.split(key)
-        init_angl = jax.random.uniform(key, (1,), minval=-1.2, maxval=1.2) # proximal2
-        qpos = jnp.concatenate([theta1, theta2, theta3, theta4, init_angl])
-        qvel = jnp.zeros(mx.nv)
-        qvel = qvel.at[0].set(-0.)
-        qvel = qvel.at[2].set(0.)
-
-        dx = dx.replace(qpos=dx.qpos.at[:].set(qpos), qvel=dx.qvel.at[:].set(qvel))
-
+        # # init_quat = jnp.array([1.0, 0.,0.,0.]) # ball
+        # _, key = jax.random.split(key)
+        # init_angl = jax.random.uniform(key, (1,), minval=-1.2, maxval=1.2) # proximal2
+        # qpos = jnp.concatenate([theta1, theta2, theta3, theta4, init_angl])
+        # qvel = jnp.zeros(mx.nv)
+        # qvel = qvel.at[0].set(-0.)
+        # qvel = qvel.at[2].set(0.)
+        v_lin = jax.random.uniform(key, (3,), minval=-0.2, maxval=0.2) # proximal1
+        qv = jax.random.uniform(key, (8,), minval=-0.1, maxval=0.1) # proximal1
+        qvel = jnp.concatenate([v_lin, jnp.zeros(3), qv])
+        dx = dx.replace(qvel=dx.qvel.at[:].set(qvel))
         return dx
 
     def set_control(dx, u):
-        dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
-        # dx = dx.replace(qfrc_applied=dx.qfrc_applied.at[6].set(u[0]))
+        dx = dx.replace(ctrl=dx.ctrl.at[:].set(u + dx.qpos[:8]))
         return dx
 
     def gen_network(n: int) -> eqx.Module:
         key = jax.random.PRNGKey(n)
-        return Policy([10, 128,256,128, 4], key)
+        return Policy([29, 64, 128, 64, 8], key)
 
     def policy(net: eqx.Module, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
     ) -> tuple[mjx.Data, jnp.ndarray]:
         x = jnp.concatenate([dx.qpos, dx.qvel])
         u = net(x, policy_key)
-
         return dx, u
-
 
     def running_cost(mx: mjx.Model, dx: mjx.Data):
         # quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
         # costR = jnp.sum((quat_to_mat(dx.qpos[4:8])  - quat_to_mat(quat_ref))**2)
-        c = dx.qpos[4] - 2.35
-        return  0.001*c**2 + 0.*jnp.sum(dx.ctrl**2)
+        height_reward = (dx.qpos[2] - 0.27)**2
+        rot_ang_reward = jnp.sum(dx.qvel[3:6]**2)
+        vel_reward = jnp.sum((dx.qvel[:3] - jnp.array([1.,0.,0.]))**2)
+        ctrl_reward = jnp.sum(dx.ctrl[:]**2)
+        return 0.01*height_reward + 0.001*rot_ang_reward + 0.001*vel_reward + 0.0001*ctrl_reward
 
     def terminal_cost(mx: mjx.Model, dx: mjx.Data):
-        # quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
-        # costR = jnp.sum((quat_to_mat(dx.qpos[4:8])  - quat_to_mat(quat_ref))**2)
-        c = dx.qpos[4] - 2.35
-        return 4.*c**2
+        height_reward = (dx.qpos[2] - 0.27)**2
+        rot_ang_reward = jnp.sum(dx.qvel[3:6]**2)
+        vel_reward = jnp.sum((dx.qvel[:3] - jnp.array([1.,0.,0.]))**2)
+        return 0.01*height_reward + 0.001*rot_ang_reward + 0.001*vel_reward 
 
     ctx = Context(
-        lr=1.e-3,
+        lr=1.e-2,
         num_gpu=1,
         seed=0,
-        nsteps=200,
-        ntotal=200,
+        nsteps=50, # 5* (3*ctx.mx.timestep)
+        ntotal=250,
         epochs=1000,
-        batch=50,
+        batch=80,
         samples=1,
-        eval=15,
-        ctrl_dim=4,
+        eval=5,
+        ctrl_dim=8,
         mx=mjx.put_model(model),
         gen_model=lambda: mujoco.MjModel.from_xml_path(model_path),
         gen_network=gen_network,

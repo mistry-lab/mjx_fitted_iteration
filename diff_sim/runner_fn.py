@@ -118,11 +118,11 @@ def run(
                     dxs, net, ctx, key_sim, opt_state, optimiser, simulate_fn, loss_fn
                 )
                 t1 = time.perf_counter_ns()
-                _, dxs, _, _ = res
+                _, dxs, terminated, _ = res
 
                 # (Re)Create data for the next iteration if needed
-                # key_main, key_data = jax.random.split(key_main)
-                dxs = data_manager.create_data(ctx, jax.random.PRNGKey(ctx.seed))
+                key_main, key_data = jax.random.split(key_main)
+                dxs = data_manager.reset_data(dxs, ctx, key_data, terminated=terminated)
 
                 # Log step metrics
                 logger.log({"loss": float(loss_value), "time_ms": (t1 - t0) * 1e-6})
