@@ -45,17 +45,12 @@ if __name__ == "__main__":
 
 
     def set_data(mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray) -> mjx.Data:
-        qpos = jnp.concatenate([
-            jax.random.uniform(key, (1,), minval=-0.3, maxval=0.3),
-            jax.random.uniform(key, (1,), minval=jnp.pi + 0.3, maxval=jnp.pi - 0.3),
-        ]).squeeze()
+        key0, key1, key2 = jax.random.split(key, num=3)
+        q0 = jax.random.uniform(key0, (1,), minval=-0.3, maxval=0.3)
+        q1 = jax.random.uniform(key1, (1,), minval=jnp.pi + 0.3, maxval=jnp.pi - 0.3)
+        qvel = jax.random.uniform(key2, (2,), minval=-0.1, maxval=0.1).squeeze()
 
-        qvel = jnp.concatenate([
-            jax.random.uniform(key, (1,), minval=-0.1, maxval=0.1),
-            jax.random.uniform(key, (1,), minval=-0.1, maxval=0.1)
-        ]).squeeze()
-
-        dx = dx.replace(qpos=dx.qpos.at[:].set(qpos), qvel=dx.qvel.at[:].set(qvel))
+        dx = dx.replace(qpos=dx.qpos.at[:].set(jnp.concatenate([q0,q1])), qvel=dx.qvel.at[:].set(qvel))
         return dx
 
     def set_control(dx, u):
