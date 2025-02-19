@@ -57,7 +57,7 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
             )
 
             terminated_time_mask = jax.vmap(
-                lambda t: (t / ctx.mx.opt.timestep) >= (ctx.ntotal - 1)
+                lambda t: (round(t / ctx.mx.opt.timestep)) >= (ctx.ntotal - 1)
             )(ts)
             # Replace cost_r with cost_t values when necessary
             costs_r = jnp.where(terminated_time_mask, costs_t, costs_r)
