@@ -23,7 +23,9 @@ class WandBLogger:
         self.run = None
 
     def __enter__(self):
-        self.run = wandb.init(project=self.project, anonymous=self.anonymous, mode=self.mode)
+        self.run = wandb.init(
+            project=self.project, anonymous=self.anonymous, mode=self.mode
+        )
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -36,30 +38,28 @@ class WandBLogger:
         wandb.log(data)
 
 
-def run(ctx, optimiser, simulate_fn, loss_fn, headless=False, wb_project="default", gpu_id=0):
+def run(
+    ctx, optimiser, simulate_fn, loss_fn, headless=False, wb_project="default", gpu_id=0
+):
     """
     Runs a training loop using JAX for multi-GPU or single-GPU stepping,
     logs metrics to W&B, and optionally visualizes the policy in MuJoCo.
     """
     try:
-        # --- WandB Logging Context ---
-        with WandBLogger(project=wb_project) as logger:
-            # Initial random keys
-            key_main = jax.random.PRNGKey(ctx.seed)
+        # Initial random keys
+        key_main = jax.random.PRNGKey(ctx.seed)
 
-            # Create MuJoCo model (CPU side) and optional viewer
-            model = ctx.gen_model()
-            data = mujoco.MjData(model)
-            viewer_context = contextlib.nullcontext() if headless else viewer.launch_passive(model, data)
+        # Create MuJoCo model (CPU side) and optional viewer
+        model = ctx.gen_model()
+        data = mujoco.MjData(model)
+        viewer_context = (
+            contextlib.nullcontext() if headless else viewer.launch_passive(model, data)
+        )
 
-            # Choose which device to run on (GPU or CPU fallback)
-            with jax.default_device(jax.devices()[gpu_id]), viewer_context as view:
-                # Create network and optimizer state
-                net = ctx.gen_network(ctx.seed)
-                opt_state = optimiser.init(eqx.filter(net, eqx.is_array))
-
-        # Choose which device to run on (GPU or CPU fallback)
-        with jax.default_device(jax.devices()[gpu_id]), viewer_context as view:
+        # Choose which device to run on (GPU or CPU fallback), init wandb logger
+        with WandBLogger(project=wb_project) as logger, jax.default_device(
+            jax.devices()[gpu_id]
+        ), viewer_context as view:
             # Create network and optimizer state
             net = ctx.gen_network(ctx.seed)
             simulate_fn_visu = eqx.filter_jit(make_simulate_fn_simple(ctx))
@@ -108,7 +108,9 @@ def run(ctx, optimiser, simulate_fn, loss_fn, headless=False, wb_project="defaul
             # Main training loop
             for e in (es := trange(ctx.epochs)):
                 # Generate random keys for this epoch
-                key_main, key_sim, key_data, key_vis, key_log = jax.random.split(key_main, num=5)
+                key_main, key_sim, key_data, key_vis, key_log = jax.random.split(
+                    key_main, num=5
+                )
 
                 # One training step
                 t0 = time.perf_counter_ns()
@@ -138,7 +140,9 @@ def run(ctx, optimiser, simulate_fn, loss_fn, headless=False, wb_project="defaul
                 # Check for evaluation/visualization
                 if (e + 1) % ctx.eval == 0 or e == ctx.epochs - 1:
                     if not headless:
-                        visualise_policy(data, model, view, ctx, net, key_vis, simulate_fn_visu)
+                        visualise_policy(
+                            data, model, view, ctx, net, key_vis, simulate_fn_visu
+                        )
                     # Save model checkpoint
                     # task_name = getattr(ctx, "task", "model")
                     # checkpoint_name = f"{task_name}_checkpoint_{e}"
@@ -159,7 +163,9 @@ def run(ctx, optimiser, simulate_fn, loss_fn, headless=False, wb_project="defaul
                     if (epoch + 1) % ctx.eval == 0 or epoch == ctx.epochs - 1:
                         if not headless:
                             key_main, key_vis = jax.random.split(key_main)
-                            visualise_policy(data, model, view, ctx, net, key_vis, simulate_fn)
+                            visualise_policy(
+                                data, model, view, ctx, net, key_vis, simulate_fn_visu
+                            )
 
                         # Optionally save or log model checkpoint
                         # checkpoint_name = f"checkpoint_{epoch}"

@@ -117,9 +117,9 @@ if __name__ == "__main__":
     # qpos_inits = jnp.repeat(qpos_inits, 64, axis=0)
     # qpos_inits += 0.01 * jax.random.normal(jax.random.PRNGKey(0), qpos_inits.shape)
     init_key = jax.random.PRNGKey(0) 
-    n_batch = 1
+    n_batch = 50
     n_samples = 1
-    Nsteps, nu = 10, 2
+    Nsteps, nu = 75, 2
     keys = jax.random.split(init_key, n_batch)  # Generate 100 random keys
     qpos_inits0 = jax.vmap(generate_inital_conditions, in_axes=(0))(keys)
 
@@ -198,7 +198,7 @@ if __name__ == "__main__":
     # Same "Policy" class as before
     from diff_sim.traj_opt.policy import Policy
     optimizer = Policy(loss=loss_fn)
-    optimal_nn = optimizer.solve(nn, adam, opt_state, batch_size=n_batch*n_samples, max_iter=2)
+    optimal_nn = optimizer.solve(nn, adam, opt_state, batch_size=n_batch*n_samples, max_iter=5)
 
     fd_cache = build_fd_cache(dx_template)
     step_fn = make_step_fn(mx, set_control, fd_cache)
