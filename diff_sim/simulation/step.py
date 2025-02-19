@@ -9,13 +9,12 @@ from mujoco import mjx
 
 
 def _upscale(x):
+    if "dtype" in dir(x):
+        if x.dtype == jnp.int32:
+            return jnp.int64(x)
+        elif x.dtype == jnp.float32:
+            return jnp.float64(x)
     return x
-    # if "dtype" in dir(x):
-    #     if x.dtype == jnp.int32:
-    #         return jnp.int64(x)
-    #     elif x.dtype == jnp.float32:
-    #         return jnp.float64(x)
-    # return x
 
 # -------------------------------------------------------------
 # Step function with automatic derivative

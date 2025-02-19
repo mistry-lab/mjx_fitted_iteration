@@ -7,13 +7,12 @@ import jax.numpy as jnp
 from diff_sim.context.meta_context import Context
 
 def _upscale(x):
+    if 'dtype' in dir(x):
+        if x.dtype == jnp.int32:
+            return jnp.int64(x)
+        elif x.dtype == jnp.float32:
+            return jnp.float64(x)
     return x
-    # if 'dtype' in dir(x):
-    #     if x.dtype == jnp.int32:
-    #         return jnp.int64(x)
-    #     elif x.dtype == jnp.float32:
-    #         return jnp.float64(x)
-    # return x
 
 
 class DataManager(eqx.Module):
