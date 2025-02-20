@@ -25,7 +25,9 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
             cost_r = ctx.run_cost(ctx.mx, dx)
             cost_t = ctx.terminal_cost(ctx.mx, dx)
             dx = step_fn(dx, u)
+            dx = ctx.set_control(dx, u)
             dx = step_fn(dx, u)
+            dx = ctx.set_control(dx, u)
             dx = step_fn(dx, u)
             terminated_s = ctx.is_terminal(ctx.mx, dx)  # State termination
             x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
@@ -100,16 +102,24 @@ def _simulate_simple(ctx: Context, make_step_fn=Callable):
             key, subkey = jax.random.split(key)
             dx, u = ctx.controller(model, ctx.mx, dx, subkey)  # Fix input/output
             dx = ctx.set_control(dx, u)
-            dx = step_fn(dx, u)
-            dx = step_fn(dx, u)
-            dx = step_fn(dx, u)
-            x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
+            # Collect intermediate states
+            states = []
+            for _ in range(3):
+                dx = ctx.set_control(dx, u)
+                dx = step_fn(dx, u)
+                states.append(jnp.concatenate([dx.qpos, dx.qvel], axis=0))
+            x = jnp.stack(states, axis=0)
             return (dx, key, params), x
 
         def rollout(dx, key, params):
             x_init = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
             (_, _, _), x = jax.lax.scan(step, (dx, key, params), None, length=ctx.ntotal)
-            x = jnp.concatenate([x_init.reshape(1, -1), x], axis=0)
+            # jax.debug.breakpoint()
+
+            x_flat = x.reshape(-1, x.shape[-1])  # Shape: (ctx.ntotal*3, state_dim)
+            # Prepend the initial state so the final output has shape 
+            # (1 + ctx.ntotal*3, state_dim)
+            x = jnp.concatenate([x_init[None, :], x_flat], axis=0)
             return x
 
         params, static = eqx.partition(net, eqx.is_array)
