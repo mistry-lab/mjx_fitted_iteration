@@ -2,8 +2,9 @@ import jax.numpy as jnp
 import equinox as eqx
 import mujoco.mjx as mjx
 from typing import Callable
+from diff_sim.context.meta_context import Context
 
-def loss_fn_policy_det(model: eqx.Module, dxs:mjx.Data, user_key: jnp.ndarray, simulate_fn: Callable) -> tuple[
+def loss_fn_policy_det(model: eqx.Module, dxs:mjx.Data, user_key: jnp.ndarray, ctx: Context,  simulate_fn: Callable) -> tuple[
     jnp.ndarray, tuple[jnp.ndarray, mjx.Data, jnp.ndarray, jnp.ndarray]]:
     """
         Loss function for the direct analytical policy optimization problem given deterministic dynamics
@@ -24,31 +25,29 @@ def loss_fn_policy_det(model: eqx.Module, dxs:mjx.Data, user_key: jnp.ndarray, s
     costs = jnp.mean(costs)
     return costs, (costs, dxs, terminated, x)
 
+def loss_fn_policy_stoch(model: eqx.Module, dxs:mjx.Data, user_key: jnp.ndarray, ctx: Context, simulate_fn: Callable) -> tuple[
+    jnp.ndarray, tuple[jnp.ndarray, mjx.Data, jnp.ndarray, jnp.ndarray]]:
+    """
+        Loss function for the direct analytical policy optimization problem given stochastic dynamics.
+        ** IF YOUR POLICY IS NOT STOCHASTIC (NO NOISE) OR SAMPLES = 1 THIS WILL BE IDENTICAL TO loss_fn_policy_det **
+        Args:
+            model: Network model
+            dxs: mjx.Data (batch)
+            user_key: jnp.ndarray, random user_key for sub calls
+            simulate_fn: Function to simulate batch of trajectories.
+        Returns:
+            jnp.ndarray, loss value
 
-# def loss_fn_policy_stoch(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context, user_key: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:
-#     """
-#         Loss function for the direct analytical policy optimization problem given stochastic dynamics.
-#         ** IF YOUR POLICY IS NOT STOCHASTIC (NO NOISE) OR SAMPLES = 1 THIS WILL BE IDENTICAL TO loss_fn_policy_det **
-#         Args:
-#             params: PyTree, model parameters
-#             static: PyTree, static parameters
-#             x_init: jnp.ndarray, initial state
-#             ctx: Context, context object
-#             user_key: jnp.ndarray, random user_key for sub calls
-#         Returns:
-#             jnp.ndarray, loss value
-
-#         Notes:
-#             We compute the expected sum of the costs over the entire trajectory and average it over the batch
-#             loss = 1/B * sum_{b=1}^{B} E[sum_{t=1}^{T} cost(x_{b,t}, u_{b,t})]
-#     """
-#     model = eqx.combine(params, static)
-#     _,_,costs,_,terminated = controlled_simulate(x_init, ctx, model, user_key)
-#     costs = costs.reshape(ctx.cfg.batch, ctx.cfg.samples, ctx.cfg.nsteps)
-#     sum_costs = jnp.sum(costs, axis=-1)
-#     exp_sum_costs = jnp.mean(sum_costs, axis=-1)
-#     costs = jnp.mean(exp_sum_costs)
-#     return costs, costs
+        Notes:
+            We compute the expected sum of the costs over the entire trajectory and average it over the batch
+            loss = 1/B * sum_{b=1}^{B} E[sum_{t=1}^{T} cost(x_{b,t}, u_{b,t})]
+    """
+    dxs, x, _, costs, _, terminated = simulate_fn(dxs, user_key, model) #shape: (B, T, 1)
+    costs = costs.reshape(ctx.batch, ctx.samples, ctx.nsteps+1)
+    sum_costs = jnp.sum(costs, axis=-1)
+    exp_sum_costs = jnp.mean(sum_costs, axis=-1)
+    costs = jnp.mean(exp_sum_costs)
+    return costs, (costs, dxs, terminated, x)
 
 
 # def loss_fn_td_det(params: PyTree, static: PyTree, x_init: jnp.ndarray, ctx: Context, user_key: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray]:

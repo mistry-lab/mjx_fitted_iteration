@@ -30,7 +30,7 @@ def step_single_gpu(dxs, model, ctx, user_key, state, optim, simulate_fn, loss_f
     :return: Updated model, updated state, and loss value
     """
     (loss_value, res), grads = eqx.filter_value_and_grad(loss_fn, has_aux=True)(
-        model, dxs, user_key, simulate_fn
+        model, dxs, user_key, ctx, simulate_fn
     )
     updates, state = optim.update(grads, state, model)
     model = eqx.apply_updates(model, updates)
