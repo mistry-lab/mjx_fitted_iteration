@@ -116,6 +116,9 @@ if __name__ == "__main__":
         is_terminal=lambda m, d: jnp.array([False]),
     )
 
+    from diff_sim.utils.check_init import  check_init_data
+    check_init_data(ctx)
+
     # optimiser = optax.adamw(ctx.lr)
     # opt_state = optim.init(eqx.filter(net, eqx.is_array))
     # params, static = eqx.partition(net, eqx.is_array)
