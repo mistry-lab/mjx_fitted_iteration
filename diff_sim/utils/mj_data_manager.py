@@ -45,8 +45,11 @@ def create_data_manager() -> DataManager:
         batch_size = ctx.batch * ctx.samples
         if custom_batch != 0:
             batch_size = custom_batch
+            keys = jax.random.split(key, batch_size) # no repeat of initial conditions
+        else:
+            keys = jax.random.split(key, ctx.batch)  # Generate `ctx.batch` unique keys
+            keys = jnp.repeat(keys, ctx.samples, axis=0)  # Repeat each key `ctx.samples` times
 
-        keys = jax.random.split(key, batch_size)
         dxs = jax.vmap(lambda x: mjx.make_data(mx), in_axes=(0,))(jnp.arange(batch_size))
         dxs = jax.tree.map(_upscale, dxs)
         dxs = jax.vmap(lambda dx, subkey: ctx.set_data(mx, dx, subkey))(dxs, keys)
