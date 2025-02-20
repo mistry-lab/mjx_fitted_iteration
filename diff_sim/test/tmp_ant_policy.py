@@ -10,7 +10,7 @@ from mujoco.mjx._src.math import quat_to_mat, axis_angle_to_quat, quat_to_axis_a
 import optax
 
 import diff_sim
-from diff_sim.loss_funcs import loss_fn_policy_det
+from diff_sim.loss_funcs import loss_fn_policy_det, loss_fn_policy_stoch
 from diff_sim.simulation.simulate import make_simulate_fn_fd, make_simulate_fn
 from diff_sim.training.train_step import step_single_gpu, step_multi_gpu
 from diff_sim.context.meta_context import Context
@@ -46,27 +46,30 @@ if __name__ == "__main__":
             return x
         
     def set_data(mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray) -> mjx.Data:
-        # theta1 = jax.random.uniform(key, (1,), minval=0.45, maxval=0.7) # proximal1
-        # theta2 = jnp.array([-0.6]) # distal1
-        # _, key = jax.random.split(key)
-        # theta3 = jax.random.uniform(key, (1,), minval=-.7, maxval=-.45) # proximal2
-        # theta4 = jnp.array([0.6]) # distal2
+        # [front_left_hip, front_left_ankle, front_right_hip ...]
+        q = jnp.zeros(8) 
+        q_hip = jax.random.uniform(key, (4,), minval=-0.5, maxval=0.5) # proximal1
+        q = q.at[::2].set(q_hip)
+        quat = jnp.zeros(4)
+        quat = quat.at[0].set(1.)
 
-        # # init_quat = jnp.array([1.0, 0.,0.,0.]) # ball
-        # _, key = jax.random.split(key)
-        # init_angl = jax.random.uniform(key, (1,), minval=-1.2, maxval=1.2) # proximal2
-        # qpos = jnp.concatenate([theta1, theta2, theta3, theta4, init_angl])
-        # qvel = jnp.zeros(mx.nv)
-        # qvel = qvel.at[0].set(-0.)
-        # qvel = qvel.at[2].set(0.)
+        _, key = jax.random.split(key)
+        pos = jnp.zeros(3)
+        p_xy =  jax.random.uniform(key, (2,), minval=-0.5, maxval=0.5)
+        pos = pos.at[:2].set(p_xy)
+        qpos = jnp.concatenate([pos, quat, q])
+
+        _, key = jax.random.split(key)
         v_lin = jax.random.uniform(key, (3,), minval=-0.2, maxval=0.2) # proximal1
+        _, key = jax.random.split(key)
         qv = jax.random.uniform(key, (8,), minval=-0.1, maxval=0.1) # proximal1
         qvel = jnp.concatenate([v_lin, jnp.zeros(3), qv])
-        dx = dx.replace(qvel=dx.qvel.at[:].set(qvel))
+
+        dx = dx.replace(qpos=dx.qpos.at[:].set(qpos), qvel=dx.qvel.at[:].set(qvel))
         return dx
 
     def set_control(dx, u):
-        dx = dx.replace(ctrl=dx.ctrl.at[:].set(u + dx.qpos[:8]))
+        dx = dx.replace(ctrl=dx.ctrl.at[:].set(u + dx.qpos[7:]))
         return dx
 
     def gen_network(n: int) -> eqx.Module:
@@ -76,7 +79,8 @@ if __name__ == "__main__":
     def policy(net: eqx.Module, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
     ) -> tuple[mjx.Data, jnp.ndarray]:
         x = jnp.concatenate([dx.qpos, dx.qvel])
-        u = net(x, policy_key)
+        _, key = jax.random.split(policy_key)
+        u = 0.05*net(x, policy_key) + 0.025*jax.random.normal(key, shape=(8,))
         return dx, u
 
     def running_cost(mx: mjx.Model, dx: mjx.Data):
@@ -86,13 +90,14 @@ if __name__ == "__main__":
         rot_ang_reward = jnp.sum(dx.qvel[3:6]**2)
         vel_reward = jnp.sum((dx.qvel[:3] - jnp.array([1.,0.,0.]))**2)
         ctrl_reward = jnp.sum(dx.ctrl[:]**2)
-        return 0.01*height_reward + 0.001*rot_ang_reward + 0.001*vel_reward + 0.0001*ctrl_reward
+        return 0.01*height_reward + 0.*rot_ang_reward + 0.015*vel_reward + 0.*ctrl_reward
 
     def terminal_cost(mx: mjx.Model, dx: mjx.Data):
         height_reward = (dx.qpos[2] - 0.27)**2
         rot_ang_reward = jnp.sum(dx.qvel[3:6]**2)
         vel_reward = jnp.sum((dx.qvel[:3] - jnp.array([1.,0.,0.]))**2)
-        return 0.01*height_reward + 0.001*rot_ang_reward + 0.001*vel_reward 
+        ctrl_reward = jnp.sum(dx.ctrl[:]**2)
+        return 0.01*height_reward + 0.*rot_ang_reward + 0.015*vel_reward + 0.*ctrl_reward
 
     ctx = Context(
         lr=1.e-2,
@@ -101,8 +106,8 @@ if __name__ == "__main__":
         nsteps=50, # 5* (3*ctx.mx.timestep)
         ntotal=250,
         epochs=1000,
-        batch=80,
-        samples=1,
+        batch=20,
+        samples=10,
         eval=5,
         ctrl_dim=8,
         mx=mjx.put_model(model),
@@ -116,28 +121,9 @@ if __name__ == "__main__":
         is_terminal=lambda m, d: jnp.array([False]),
     )
 
-    from diff_sim.utils.check_init import  check_init_data
-    check_init_data(ctx)
-
-    # optimiser = optax.adamw(ctx.lr)
-    # opt_state = optim.init(eqx.filter(net, eqx.is_array))
-    # params, static = eqx.partition(net, eqx.is_array)
-    # key_init = jax.random.PRNGKey(0)
-    # key_data, key_sim = jax.random.split(key_init, num=2)
-    # simulate_fn = make_simulate_fn_fd(ctx)
-
-    # data_manager = create_data_manager()
-    # dxs = data_manager.create_data(ctx, key_data)
-
-    # for e in range(100):
-    #     t0 = time.perf_counter_ns()
-    #     model, state, loss_value, res = step_single_gpu(
-    #         dxs, net, ctx, key_sim, opt_state, optim, simulate_fn, loss_fn_policy_det
-    #     )
-    #     t1 = time.perf_counter_ns()
-    #     print("Time [ms] : ", 1e-6*(t1 - t0), "epoch: ", e)
-
+    # from diff_sim.utils.check_init import  check_init_data
+    # check_init_data(ctx)
 
     optimiser = optax.adamw(ctx.lr)
     simulate_fn = eqx.filter_jit(make_simulate_fn_fd(ctx))
-    run(ctx, optimiser, simulate_fn, loss_fn_policy_det)
+    run(ctx, optimiser, simulate_fn, loss_fn_policy_stoch)
