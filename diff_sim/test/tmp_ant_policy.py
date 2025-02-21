@@ -69,7 +69,7 @@ if __name__ == "__main__":
         return dx
 
     def set_control(dx, u):
-        dx = dx.replace(ctrl=dx.ctrl.at[:].set(u + dx.qpos[7:]))
+        dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
         return dx
 
     def gen_network(n: int) -> eqx.Module:
@@ -80,34 +80,42 @@ if __name__ == "__main__":
     ) -> tuple[mjx.Data, jnp.ndarray]:
         x = jnp.concatenate([dx.qpos, dx.qvel])
         _, key = jax.random.split(policy_key)
-        u = 0.05*net(x, policy_key) + 0.025*jax.random.normal(key, shape=(8,))
+        u = 0.1*net(x, policy_key) + 0.*jax.random.normal(key, shape=(8,))
         return dx, u
+    
+    # def barrier_cost_quadratic(x, lower=-0.5, upper=0.5, margin=0.1, weight=100.0):
+    #     cost_lower = jnp.where(x < lower + margin, ((lower + margin - x) / margin) ** 2, 0.0)
+    #     cost_upper = jnp.where(x > upper - margin, ((x - (upper - margin)) / margin) ** 2, 0.0)
+    #     return weight * (cost_lower + cost_upper)
+
 
     def running_cost(mx: mjx.Model, dx: mjx.Data):
         # quat_ref = axis_angle_to_quat(jnp.array([0.,0.,1.]), jnp.array([2.35]))
         # costR = jnp.sum((quat_to_mat(dx.qpos[4:8])  - quat_to_mat(quat_ref))**2)
-        height_reward = (dx.qpos[2] - 0.27)**2
+        height_reward = (dx.qpos[2] - 0.02)**2
         rot_ang_reward = jnp.sum(dx.qvel[3:6]**2)
-        vel_reward = jnp.sum((dx.qvel[:3] - jnp.array([1.,0.,0.]))**2)
+        vel_reward = jnp.sum((dx.qvel[0] - jnp.array([1.]))**2)
         ctrl_reward = jnp.sum(dx.ctrl[:]**2)
-        return 0.01*height_reward + 0.*rot_ang_reward + 0.015*vel_reward + 0.*ctrl_reward
+        # joint_limit_reward = jnp.sum(barrier_cost_quadratic(dx.qpos[7:], lower=-0.5, upper=0.5, margin=0.1, weight=100.0))
+        return 0.1*height_reward + 0.*rot_ang_reward + 0.*vel_reward + 0.1*ctrl_reward 
 
     def terminal_cost(mx: mjx.Model, dx: mjx.Data):
-        height_reward = (dx.qpos[2] - 0.27)**2
+        height_reward = (dx.qpos[2] - 0.02)**2
         rot_ang_reward = jnp.sum(dx.qvel[3:6]**2)
-        vel_reward = jnp.sum((dx.qvel[:3] - jnp.array([1.,0.,0.]))**2)
+        vel_reward = jnp.sum((dx.qvel[0] - jnp.array([1.]))**2)
         ctrl_reward = jnp.sum(dx.ctrl[:]**2)
-        return 0.01*height_reward + 0.*rot_ang_reward + 0.015*vel_reward + 0.*ctrl_reward
+        # joint_limit_reward = jnp.sum(barrier_cost_quadratic(dx.qpos[7:], lower=-0.5, upper=0.5, margin=0.1, weight=100.0))
+        return 10.*height_reward + 0.*rot_ang_reward + 0.*vel_reward + 0.*ctrl_reward 
 
     ctx = Context(
-        lr=1.e-2,
+        lr=3.e-4,
         num_gpu=1,
         seed=0,
-        nsteps=50, # 5* (3*ctx.mx.timestep)
-        ntotal=250,
+        nsteps=75, # 5* (3*ctx.mx.timestep)
+        ntotal=75,
         epochs=1000,
-        batch=20,
-        samples=10,
+        batch=80,
+        samples=1,
         eval=5,
         ctrl_dim=8,
         mx=mjx.put_model(model),
