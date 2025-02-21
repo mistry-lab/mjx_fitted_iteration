@@ -8,13 +8,11 @@ import equinox as eqx
 import mujoco
 from mujoco import mjx
 import optax
-
 import diff_sim
 from diff_sim.loss_funcs import loss_fn_policy_det
 from diff_sim.simulation.simulate import make_simulate_fn_fd
 from diff_sim.context.meta_context import Context
 from diff_sim.runner_fn import run
-
 
 if __name__ == "__main__":
     # Load mj and mjx model
@@ -43,6 +41,25 @@ if __name__ == "__main__":
             # x = jnp.tanh(x) * 1.
             return x
 
+    class TrajNet(eqx.Module):
+        traj: jax.numpy.ndarray
+
+        def __init__(self, dims, key):
+            self.traj = jax.random.uniform(key, dims) # (B, T, nu)
+
+        def __call__(self, x, b_idx, t_idx):
+            return self.traj[b_idx, t_idx]
+
+    class TrajPolicy(eqx.Module):
+        traj_net: TrajNet
+        policy_net: Policy
+
+        def __init__(self, traj_net, policy_net):
+            self.traj_net = traj_net
+            self.policy_net = policy_net
+
+        def __call__(self, x, b_idx, t_idx):
+            return self.policy_net(x, t_idx) + self.traj_net(x, b_idx, t_idx)
 
     def set_data(mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray) -> mjx.Data:
         # Solution of IK
@@ -69,20 +86,20 @@ if __name__ == "__main__":
         dx = dx.replace(qpos=dx.qpos.at[2].set(theta[0]))
         return dx
 
-
     def set_control(dx, u):
         dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
         return dx
 
     def gen_network(n: int) -> eqx.Module:
         key = jax.random.PRNGKey(n)
-        return Policy([6, 128, 256, 128, 2], key)
+        return TrajNet([200, 100, 2], key)
 
-
-    def policy(net: eqx.Module, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
-               ) -> tuple[mjx.Data, jnp.ndarray]:
+    def policy(
+            net: eqx.Module, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray, b_idx: jnp.ndarray
+    ) -> tuple[mjx.Data, jnp.ndarray]:
         x = jnp.concatenate([dx.qpos, dx.qvel])
-        u = net(x, policy_key)
+        t_idx = jnp.round(dx.time/mx.opt.timestep).astype(jnp.int32)
+        u = net(x, b_idx, t_idx)
         return dx, u
 
     def running_cost(mx: mjx.Model, dx: mjx.Data):
@@ -102,15 +119,15 @@ if __name__ == "__main__":
 
 
     ctx = Context(
-        lr=3e-3,
+        lr=0.1,
         num_gpu=1,
         seed=0,
-        nsteps=75,
-        ntotal=75,
-        epochs=5,
-        batch=50,
+        nsteps=100,
+        ntotal=100,
+        epochs=100,
+        batch=200,
         samples=1,
-        eval=10,
+        eval=25,
         ctrl_dim=2,
         mx=mjx.put_model(model),
         gen_model=lambda: mujoco.MjModel.from_xml_path(model_path),
@@ -123,6 +140,8 @@ if __name__ == "__main__":
         is_terminal=is_terminal,
     )
 
-    optimiser = optax.adamw(ctx.lr)
+    from diff_sim.utils.check_init import  check_init_data
+    check_init_data(ctx)
+    optimiser = optax.sgd(ctx.lr)
     simulate_fn = eqx.filter_jit(make_simulate_fn_fd(ctx))
     run(ctx, optimiser, simulate_fn, loss_fn_policy_det)
