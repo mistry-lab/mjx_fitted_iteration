@@ -15,24 +15,24 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
     # TODO: What if ctrl is shape 0 and we use directly forces for example
     def simulate(dxs, key, net):
         def step(carry, _):
-            dx, key, params = carry
+            dx, key, batch_idx, params = carry
             model = eqx.combine(params, static)
             key, subkey = jax.random.split(key)
-            dx, u = ctx.controller(model, ctx.mx, dx, subkey)  # Fix input/output
+            dx, u = ctx.controller(model, ctx.mx, dx, subkey, batch_idx)  # Fix input/output
             dx = ctx.set_control(
                 dx, u
             )  # To get the ctrl inside dx for the cost. TODO: optimise this.
             cost_r = ctx.run_cost(ctx.mx, dx)
             cost_t = ctx.terminal_cost(ctx.mx, dx)
             dx = step_fn(dx, u)
-            dx = ctx.set_control(dx, u)
-            dx = step_fn(dx, u)
-            dx = ctx.set_control(dx, u)
-            dx = step_fn(dx, u)
+            # dx = ctx.set_control(dx, u)
+            # dx = step_fn(dx, u)
+            # dx = ctx.set_control(dx, u)
+            # dx = step_fn(dx, u)
             terminated_s = ctx.is_terminal(ctx.mx, dx)  # State termination
             x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
             # t = jnp.expand_dims(dx.time, axis=0)
-            return (dx, key, params), (
+            return (dx, key, batch_idx, params), (
                 x,
                 dx.ctrl,
                 cost_r,
@@ -41,11 +41,11 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
                 terminated_s,
             )
 
-        def rollout(dx, key, params):
+        def rollout(dx, key, batch_idx, params):
             t0 = dx.time
             x_init = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
-            (dx, _, _), res = jax.lax.scan(
-                step, (dx, key, params), None, length=ctx.nsteps
+            (dx, _, _, _), res = jax.lax.scan(
+                step, (dx, key, batch_idx, params), None, length=ctx.nsteps
             )
             x, u, costs_r, costs_t, ts, terminated_state = res
 
@@ -62,7 +62,7 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
             )
 
             terminated_time_mask = jax.vmap(
-                lambda t: (round(t / (3*ctx.mx.opt.timestep)) >= (ctx.ntotal))
+                lambda t: (round(t / (1*ctx.mx.opt.timestep)) >= (ctx.ntotal))
             )(ts)
             # Replace cost_r with cost_t values when necessary
             costs_r = jnp.where(terminated_time_mask, costs_t, costs_r)
@@ -87,7 +87,8 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
 
         params, static = eqx.partition(net, eqx.is_array)
         keys = jax.random.split(key, num=dxs.qpos.shape[0])
-        return jax.vmap(rollout, in_axes=(0, 0, None))(dxs, keys, params)
+        batch_indices = jnp.arange(dxs.qpos.shape[0])
+        return jax.vmap(rollout, in_axes=(0, 0, 0, None))(dxs, keys, batch_indices, params)
 
     return simulate
 
@@ -97,23 +98,23 @@ def _simulate_simple(ctx: Context, make_step_fn=Callable):
 
     def simulate(dxs, key, net):
         def step(carry, _):
-            dx, key, params = carry
+            dx, key, batch_idx, params = carry
             model = eqx.combine(params, static)
             key, subkey = jax.random.split(key)
-            dx, u = ctx.controller(model, ctx.mx, dx, subkey)  # Fix input/output
+            dx, u = ctx.controller(model, ctx.mx, dx, subkey, batch_idx)  # Fix input/output
             dx = ctx.set_control(dx, u)
             # Collect intermediate states
             states = []
-            for _ in range(3):
+            for _ in range(1):
                 dx = ctx.set_control(dx, u)
                 dx = step_fn(dx, u)
                 states.append(jnp.concatenate([dx.qpos, dx.qvel], axis=0))
             x = jnp.stack(states, axis=0)
-            return (dx, key, params), x
+            return (dx, key, batch_idx, params), x
 
-        def rollout(dx, key, params):
+        def rollout(dx, key, batch_idx, params):
             x_init = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
-            (_, _, _), x = jax.lax.scan(step, (dx, key, params), None, length=ctx.ntotal)
+            (_, _, _, _), x = jax.lax.scan(step, (dx, key, batch_idx, params), None, length=ctx.ntotal)
             # jax.debug.breakpoint()
 
             x_flat = x.reshape(-1, x.shape[-1])  # Shape: (ctx.ntotal*3, state_dim)
@@ -124,7 +125,8 @@ def _simulate_simple(ctx: Context, make_step_fn=Callable):
 
         params, static = eqx.partition(net, eqx.is_array)
         keys = jax.random.split(key, num=dxs.qpos.shape[0])
-        return jax.vmap(rollout, in_axes=(0, 0, None))(dxs, keys, params)
+        batch_indices = jnp.arange(dxs.qpos.shape[0])
+        return jax.vmap(rollout, in_axes=(0, 0, 0, None))(dxs, keys, batch_indices, params)
 
     return simulate
 

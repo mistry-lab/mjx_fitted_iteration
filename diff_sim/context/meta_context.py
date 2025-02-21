@@ -29,7 +29,7 @@ class Context:
     is_terminal : Callable[[mjx.Model, mjx.Data], jnp.ndarray]
     set_control : Callable[[mjx.Data, jnp.ndarray], mjx.Data]
     controller : Callable[
-        [eqx.Module, mjx.Model, mjx.Data, jnp.ndarray],
+        [eqx.Module, mjx.Model, mjx.Data, jnp.ndarray, jnp.ndarray],
         tuple[mjx.Data, jnp.ndarray]
     ]
     ctrl_dim: Optional[int]                  # Dimension of the control (not necessarily dx.ctrl)

@@ -79,32 +79,6 @@ def run(
             # How often to log stats
             log_interval = max(1, ctx.ntotal // ctx.nsteps)
 
-            # Helper function to handle logging
-            # def log_stats_and_reset(iteration, key_log):
-            #     """Logs training stats, evaluates policy, then resets stats."""
-            #     key_data_log, key_sim_log = jax.random.split(key_log,num=2)
-            #     # Evaluate the policy on a small validation batch
-            #     dxs_log = data_manager.create_data(ctx, key_data_log, custom_batch=2)
-
-            #     # Example: simulate_fn returns (.., costs, ..) in 4th position
-            #     # Adjust to match your actual signature
-            #     _, _, _, costs, _, _ = simulate_fn(dxs_log, key_sim_log, net)
-
-            #     # Construct log data
-            #     log_data = {
-            #         "Iteration": iteration,
-            #         "Loss avg": round(stats["loss"] / log_interval, 3),
-            #         "Traj Cost avg": float(jnp.mean(jnp.sum(costs, axis=-1))),
-            #         "nreset avg": stats["reset"],  # could also be an average if desired
-            #     }
-            #     wandb.log(log_data)
-            #     es.set_postfix(log_data)
-
-            #     # Reset stats
-            #     stats["loss"] = 0.0
-            #     stats["cost"] = 0.0
-            #     stats["reset"] = 0.0
-
             # Main training loop
             for e in (es := trange(ctx.epochs)):
                 # Generate random keys for this epoch
@@ -122,7 +96,8 @@ def run(
 
                 # (Re)Create data for the next iteration if needed
                 key_main, key_data = jax.random.split(key_main)
-                dxs = data_manager.reset_data(dxs, ctx, key_data, terminated=terminated)
+                dxs = data_manager.create_data(ctx, jax.random.PRNGKey(ctx.seed))
+                # dxs = data_manager.reset_data(dxs, ctx, key_data, terminated=terminated)
 
                 # Log step metrics
                 logger.log({"loss": float(loss_value), "time_ms": (t1 - t0) * 1e-6})

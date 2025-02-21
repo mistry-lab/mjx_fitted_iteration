@@ -2,6 +2,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
+
 def clip_grad_elementwise(grads, clip_value=1.0):
     """
     Clips each element of the gradients PyTree to lie within [-clip_value, clip_value].
@@ -32,6 +33,13 @@ def step_single_gpu(dxs, model, ctx, user_key, state, optim, simulate_fn, loss_f
     (loss_value, res), grads = eqx.filter_value_and_grad(loss_fn, has_aux=True)(
         model, dxs, user_key, ctx, simulate_fn
     )
+
+    params, static = eqx.partition(model, eqx.is_array)
+
+    # def fun(params):
+    #     return loss_fn(eqx.combine(params, static), dxs, user_key, ctx, simulate_fn)[0]
+    #
+    # updates, state = optim.update(grads, state, params, value=loss_value, grad=grads, value_fn=fun)
     updates, state = optim.update(grads, state, model)
     model = eqx.apply_updates(model, updates)
 

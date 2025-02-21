@@ -1,3 +1,4 @@
+import jax
 import jax.numpy as jnp
 import equinox as eqx
 import mujoco.mjx as mjx
@@ -24,6 +25,7 @@ def loss_fn_policy_det(model: eqx.Module, dxs:mjx.Data, user_key: jnp.ndarray, c
     costs = jnp.sum(costs, axis=1)
     costs = jnp.mean(costs)
     return costs, (costs, dxs, terminated, x)
+
 
 def loss_fn_policy_stoch(model: eqx.Module, dxs:mjx.Data, user_key: jnp.ndarray, ctx: Context, simulate_fn: Callable) -> tuple[
     jnp.ndarray, tuple[jnp.ndarray, mjx.Data, jnp.ndarray, jnp.ndarray]]:

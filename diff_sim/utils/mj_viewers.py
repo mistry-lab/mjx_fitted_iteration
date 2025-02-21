@@ -22,7 +22,7 @@ def visualise_policy(
     simulate_fn: Callable,
 ):
     key_data, key_sim = jax.random.split(key, num=2)
-    dxs = data_manager.create_data(ctx, key_data, custom_batch=3)
+    dxs = data_manager.create_data(ctx, key_data, custom_batch=10)
     x = simulate_fn(dxs, key_sim, net)
     for b in range(x.shape[0]):
         for i in range(x.shape[1]):
