@@ -12,9 +12,9 @@ import optax
 import diff_sim
 from diff_sim.loss_funcs import loss_fn_policy_det
 from diff_sim.simulation.simulate import make_simulate_fn_fd
-from diff_sim.context.meta_context import Context
+from diff_sim.context.meta_context import Context, ContextMPPI
 from diff_sim.runner_fn import run
-
+from diff_sim.solver.mppi import ParamtersMPPI, mppi
 
 if __name__ == "__main__":
     # Load mj and mjx model
@@ -43,7 +43,6 @@ if __name__ == "__main__":
             # x = jnp.tanh(x) * 1.
             return x
 
-
     def set_data(mx: mjx.Model, dx: mjx.Data, key: jnp.ndarray) -> mjx.Data:
         # Solution of IK
         _, key = jax.random.split(key)
@@ -69,7 +68,6 @@ if __name__ == "__main__":
         dx = dx.replace(qpos=dx.qpos.at[2].set(theta[0]))
         return dx
 
-
     def set_control(dx, u):
         dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
         return dx
@@ -77,13 +75,6 @@ if __name__ == "__main__":
     def gen_network(n: int) -> eqx.Module:
         key = jax.random.PRNGKey(n)
         return Policy([6, 128, 256, 128, 2], key)
-
-
-    def policy(net: eqx.Module, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
-               ) -> tuple[mjx.Data, jnp.ndarray]:
-        x = jnp.concatenate([dx.qpos, dx.qvel])
-        u = net(x, policy_key)
-        return dx, u
 
     def running_cost(mx: mjx.Model, dx: mjx.Data):
         pos_finger = dx.qpos[2]
@@ -95,10 +86,30 @@ if __name__ == "__main__":
         return 4. * pos_finger**2
 
     # TODO: Add terminal time to is_terminal function
-    # Is terminal function only for state, not time condition, 
+    # Is terminal function only for state, not time condition,
     # handled internally in time.
     def is_terminal(mx: mjx.Model, dx: mjx.Data):
         return jnp.array([False])
+
+    params_mmpi = ParamtersMPPI(
+        temp=0.001,
+        horizon=16,
+        nrollout=20,
+        mx=mjx.put_model(model),
+        run_cost=running_cost,
+        terminal_cost=terminal_cost,
+        set_control=set_control
+    )
+
+    def policy(net: eqx.Module, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
+               ) -> tuple[mjx.Data, jnp.ndarray]:
+        # x = jnp.concatenate([dx.qpos, dx.qvel])
+        # u = net(x, policy_key)
+        def net_mppi(dx,key):
+            x = jnp.concatenate([dx.qpos, dx.qvel])
+            return jax.lax.stop_gradient(net(x,key))
+        u = mppi(dx,policy_key,net_mppi)
+        return dx, u
 
 
     ctx = Context(
