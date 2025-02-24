@@ -12,7 +12,7 @@ import optax
 import diff_sim
 from diff_sim.loss_funcs import loss_fn_policy_det, loss_fn_policy_stoch
 from diff_sim.simulation.simulate import make_simulate_fn_fd, make_simulate_fn
-from diff_sim.training.train_step import step_single_gpu, step_multi_gpu
+from diff_sim.train_step import step_single_gpu, step_multi_gpu
 from diff_sim.context.meta_context import Context
 from diff_sim.utils.mj_data_manager import create_data_manager
 

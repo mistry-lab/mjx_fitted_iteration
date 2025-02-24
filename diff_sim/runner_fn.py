@@ -9,7 +9,7 @@ import equinox as eqx
 
 from diff_sim.simulation.simulate import make_simulate_fn_simple
 from diff_sim.utils.tqdm import trange
-from diff_sim.training.train_step import step_single_gpu, step_multi_gpu
+from diff_sim.train_step import step_single_gpu, step_multi_gpu
 from diff_sim.utils.mj_data_manager import create_data_manager
 from diff_sim.utils.mj_viewers import visualise_policy
 from diff_sim.utils.generic_helpers import save_model
