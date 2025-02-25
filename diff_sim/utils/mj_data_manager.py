@@ -1,10 +1,19 @@
-from typing import Callable, Tuple
+from typing import Callable
 from dataclasses import field
 from mujoco import mjx
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 from diff_sim.context.meta_context import Context
+
+def _upscale(x):
+    if 'dtype' in dir(x):
+        if x.dtype == jnp.int32:
+            return jnp.int64(x)
+        elif x.dtype == jnp.float32:
+            return jnp.float64(x)
+    return x
+
 
 class DataManager(eqx.Module):
     _set_init_compiled: Callable[[mjx.Model, Context, int, jnp.ndarray], mjx.Data] = field(default=None)
@@ -16,39 +25,34 @@ class DataManager(eqx.Module):
 
 
     def create_data(
-            self, mx: mjx.Model, ctx: Context, batch_size: int, key: jnp.ndarray
+            self, ctx: Context, key: jnp.ndarray, custom_batch:int = 0
     ) -> mjx.Data:
-        dxs = self._set_init_compiled(mx, ctx, batch_size, key)
+        dxs = self._set_init_compiled(ctx, key, custom_batch)
         return dxs
 
     def reset_data(
-            self, mx: mjx.Model, dxs: mjx.Data, ctx: Context, key: jnp.ndarray, terminated: jnp.ndarray
+            self, dxs: mjx.Data, ctx: Context, key: jnp.ndarray, terminated: jnp.ndarray
     ) -> mjx.Data:
         indices_to_reset = jnp.where(terminated)[0]
         if indices_to_reset.size > 0:
-            new_dxs = self.create_data(mx, ctx, indices_to_reset.size, key)
+            new_dxs = self.create_data(ctx, key, indices_to_reset.size)
             dxs = self._replace_indices_compiled(dxs, indices_to_reset, new_dxs)
         return dxs
 
-
 def create_data_manager() -> DataManager:
-    def set_init(mx: mjx.Model, ctx, batch_size, key: jnp.ndarray) -> mjx.Data:
-        xs = jnp.zeros((batch_size, mx.nq + mx.nv))
-        subkeys = jax.random.split(key, batch_size)
-        def set_zero(x, mx):
-            dx = mjx.make_data(mx)
-            qpos = dx.qpos.at[:].set(x[:mx.nq])
-            qvel = dx.qvel.at[:].set(x[mx.nq:])
-            dx = dx.replace(qpos=qpos, qvel=qvel)
-            return dx
+    def set_init(ctx: Context, key: jnp.ndarray, custom_batch:int) -> mjx.Data:
+        mx = ctx.mx
+        batch_size = ctx.batch * ctx.samples
+        if custom_batch != 0:
+            batch_size = custom_batch
+            keys = jax.random.split(key, batch_size) # no repeat of initial conditions
+        else:
+            keys = jax.random.split(key, ctx.batch)  # Generate `ctx.batch` unique keys
+            keys = jnp.repeat(keys, ctx.samples, axis=0)  # Repeat each key `ctx.samples` times
 
-        dxs = jax.vmap(set_zero, in_axes=(0, None))(xs, mx)
-        dxs = jax.vmap(ctx.cbs.set_data, in_axes=(None, 0, None, 0))(mx, dxs, ctx, subkeys)
-        dxs = jax.vmap(mjx.step, in_axes=(None, 0))(mx, dxs)
-
-        # TODO: test if these work
-        # dxs = jax.vmap(lambda x: set_zero(x, mx))(xs)
-        # dxs = jax.vmap(lambda dx, subkey: ctx.cbs.set_data(mx, dx, ctx, subkey))(dxs, subkeys)
+        dxs = jax.vmap(lambda x: mjx.make_data(mx), in_axes=(0,))(jnp.arange(batch_size))
+        dxs = jax.tree.map(_upscale, dxs)
+        dxs = jax.vmap(lambda dx, subkey: ctx.set_data(mx, dx, subkey))(dxs, keys)
         # dxs = jax.vmap(lambda dx: mjx.step(mx, dx))(dxs)
 
         return dxs
