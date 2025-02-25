@@ -10,11 +10,12 @@ from mujoco import mjx
 import optax
 
 import diff_sim
-from diff_sim.loss_funcs import loss_fn_policy_det
-from diff_sim.simulation.simulate import make_simulate_fn_fd
+from diff_sim.loss_funcs import loss_fn_policy_det, loss_fn_fitted_policy, loss_fn_fitted_value
+from diff_sim.simulation.simulate import make_simulate_fn_fd, make_simulate_fn_mppi
 from diff_sim.context.meta_context import Context
 from diff_sim.runner_fn import run
 from diff_sim.solver.mppi import ParamtersMPPI, mppi
+from diff_sim.train_step import step_single_gpu, step_multi_gpu, step_mppi
 
 if __name__ == "__main__":
     # Load mj and mjx model
@@ -22,7 +23,7 @@ if __name__ == "__main__":
     model = mujoco.MjModel.from_xml_path(model_path)
     mx = mjx.put_model(model)
 
-    class Policy(eqx.Module):
+    class MLP(eqx.Module):
         layers: list
         act: callable
         dropout: callable
@@ -72,9 +73,9 @@ if __name__ == "__main__":
         dx = dx.replace(ctrl=dx.ctrl.at[:].set(u))
         return dx
 
-    def gen_network(n: int) -> eqx.Module:
-        key = jax.random.PRNGKey(n)
-        return Policy([6, 128, 256, 128, 2], key)
+    def gen_network(n: int) -> tuple:
+        pkey, vkey = jax.random.split(jax.random.PRNGKey(n))
+        return (MLP([6, 128, 256, 128, 2], pkey), MLP([6, 128, 256, 128, 1], vkey))
 
     def running_cost(mx: mjx.Model, dx: mjx.Data):
         pos_finger = dx.qpos[2]
@@ -92,23 +93,27 @@ if __name__ == "__main__":
         return jnp.array([False])
 
     params_mmpi = ParamtersMPPI(
-        temp=0.001,
-        horizon=16,
-        nrollout=20,
+        temp=0.1,
+        horizon=8,
+        nrollout=10,
         mx=mjx.put_model(model),
         run_cost=running_cost,
         terminal_cost=terminal_cost,
         set_control=set_control
     )
 
-    def policy(net: eqx.Module, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
+    def policy(nets: eqx.Module, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
                ) -> tuple[mjx.Data, jnp.ndarray]:
         # x = jnp.concatenate([dx.qpos, dx.qvel])
         # u = net(x, policy_key)
-        def net_mppi(dx,key):
+        net_p, net_v = nets
+        def net_p_fn(dx,key):
             x = jnp.concatenate([dx.qpos, dx.qvel])
-            return net(x, key)
-        u = mppi(dx,policy_key,net_mppi)
+            return net_p(x, key)
+        def net_v_fn(dx,key):
+            x = jnp.concatenate([dx.qpos, dx.qvel])
+            return net_v(x, key)
+        u = mppi(dx,policy_key,net_p_fn, net_v_fn, params_mmpi)
         return dx, u
 
 
@@ -116,9 +121,9 @@ if __name__ == "__main__":
         lr=3e-3,
         num_gpu=1,
         seed=0,
-        nsteps=75,
-        ntotal=75,
-        epochs=5,
+        nsteps=200,
+        ntotal=200,
+        epochs=100,
         batch=50,
         samples=1,
         eval=10,
@@ -135,5 +140,5 @@ if __name__ == "__main__":
     )
 
     optimiser = optax.adamw(ctx.lr)
-    simulate_fn = eqx.filter_jit(make_simulate_fn_fd(ctx))
-    run(ctx, optimiser, simulate_fn, loss_fn_policy_det)
+    simulate_fn = eqx.filter_jit(make_simulate_fn_mppi(ctx))
+    run(ctx, optimiser, simulate_fn, (loss_fn_fitted_policy, loss_fn_fitted_value), step_mppi)

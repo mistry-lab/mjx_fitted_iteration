@@ -25,7 +25,7 @@ class Context:
     run_cost : Callable[[mjx.Model, mjx.Data], jnp.ndarray]
     terminal_cost : Callable[[mjx.Model, mjx.Data], jnp.ndarray]
     set_data : Callable[[mjx.Model, mjx.Data, jnp.ndarray], mjx.Data]
-    gen_network : Callable[[int], eqx.Module]
+    gen_network : tuple
     is_terminal : Callable[[mjx.Model, mjx.Data], jnp.ndarray]
     set_control : Callable[[mjx.Data, jnp.ndarray], mjx.Data]
     controller : Callable[

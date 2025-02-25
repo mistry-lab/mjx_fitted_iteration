@@ -5,9 +5,19 @@ import mujoco.mjx as mjx
 from typing import Callable
 from diff_sim.context.meta_context import Context
 
+def loss_fn_fitted_policy(model: eqx.Module, xs, us, key):
+    @jax.vmap
+    def policy_cost(x, us, key):
+        keys = jax.random.split(key, num=x.shape[0]-1)
+        pred = jax.vmap(model)(x[:-1], keys)
+        return jnp.sum(jnp.square(pred - us))
+    
+    keys = jax.random.split(key, num=xs.shape[0])
+    costs = jnp.mean(policy_cost(xs, us, keys).flatten())
+    return costs
 
-def loss_fn_fitted_policy_and_value(
-        model: eqx.Module, dxs: mjx.Data, user_key: jnp.ndarray, ctx: Context, simulate_fn: Callable) -> tuple[
+
+def loss_fn_fitted_value(model: eqx.Module, xs, costs, key) -> tuple[
     jnp.ndarray, tuple[jnp.ndarray, mjx.Data, jnp.ndarray, jnp.ndarray]
 ]:
     """
@@ -24,12 +34,18 @@ def loss_fn_fitted_policy_and_value(
             We compute the target value over the entire trajectory and fit the value function over the batch
             loss = 1/B * sum_{b=1}^{B} sum_{t=1}^{T} (v(x_{b,t}) - y_{b,t})^2
     """
-    value_fn = model.value_fn
-    policy_fn = model.policy_fn
-
     @jax.vmap
-    def v_diff(x):
-        v_seq = jax.vmap(value_fn)(x)
+    def cost_fn(x, costs, key):
+        keys = jax.random.split(key, num=x.shape[0])
+        pred = jax.vmap(model)(x, keys)
+        targets = jnp.flip(costs)
+        targets = jnp.flip(jnp.cumsum(targets))
+        return jnp.sum(jnp.square(pred - targets))
+    
+    @jax.vmap
+    def v_diff(x, key):
+        keys = jax.random.split(key, num=x.shape[0])
+        v_seq = jax.vmap(model)(x, keys)
         v0, v1 = v_seq[0:-1], v_seq[1:]
         return v0 - v1, v_seq[-1]
 
@@ -39,21 +55,15 @@ def loss_fn_fitted_policy_and_value(
         v_term_cost = term - cost[-1]
         return jnp.sum(jnp.square(v_diff_cost)) + jnp.square(v_term_cost)
 
-    @jax.vmap
-    def policy_cost(x, us):
-        pred = jax.vmap(policy_fn)(x)
-        return jnp.sum(jnp.square(pred - us))
-
-    dxs, xs, us, costs, _, terminated = simulate_fn(dxs, user_key, model) #xs and us shape: (B, T, nu), (B, T, nx)
     B, T, _ = xs.shape
-    diff, term = v_diff(xs)
-    traj_costs = jnp.mean(jnp.sum(costs, axis=-1))
-    value_costs = jnp.mean(td_cost(diff.reshape(B, T-1), term.reshape(B, 1), costs))
-    policy_costs = jnp.mean(policy_cost(xs, us).flatten())
-    # return one cost if policy is a projection of value function else return both costs
-    return value_costs + policy_costs, (traj_costs, dxs, terminated, xs)
-    return (value_costs, policy_costs), (traj_costs, dxs, terminated, xs)
-    # return jnp.mean(cost(x, costs)), (cost(x, costs), dxs, terminated, x)
+    # keys = jax.random.split(key, num=xs.shape[0])
+    # diff, term = v_diff(xs,keys)
+    # value_costs = jnp.mean(td_cost(diff.reshape(B, T-1), term.reshape(B, 1), costs))
+
+    keys = jax.random.split(key, num=xs.shape[0])
+    value_costs = jnp.mean(cost_fn(xs, costs, keys))
+
+    return value_costs
 
 def loss_fn_policy_det(model: eqx.Module, dxs:mjx.Data, user_key: jnp.ndarray, ctx: Context,  simulate_fn: Callable) -> tuple[
     jnp.ndarray, tuple[jnp.ndarray, mjx.Data, jnp.ndarray, jnp.ndarray]]:

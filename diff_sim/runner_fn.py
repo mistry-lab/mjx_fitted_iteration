@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import contextlib
 import equinox as eqx
 
-from diff_sim.simulation.simulate import make_simulate_fn_simple
+from diff_sim.simulation.simulate import make_simulate_fn_simple, make_simulate_simple_mppi
 from diff_sim.utils.tqdm import trange
 from diff_sim.train_step import step_single_gpu, step_multi_gpu
 from diff_sim.utils.mj_data_manager import create_data_manager
@@ -39,7 +39,7 @@ class WandBLogger:
 
 
 def run(
-    ctx, optimiser, simulate_fn, loss_fn, headless=False, wb_project="default", gpu_id=0
+    ctx, optimiser, simulate_fn, loss_fn, step_fn, headless=False, wb_project="default", gpu_id=0
 ):
     """
     Runs a training loop using JAX for multi-GPU or single-GPU stepping,
@@ -61,13 +61,13 @@ def run(
             jax.devices()[gpu_id]
         ), viewer_context as view:
             # Create network and optimizer state
-            net = ctx.gen_network(ctx.seed)
-            simulate_fn_visu = eqx.filter_jit(make_simulate_fn_simple(ctx))
-            visualise_policy(data, model, view, ctx, net, key_main, simulate_fn_visu)
-            opt_state = optimiser.init(eqx.filter(net, eqx.is_array))
+            nets = ctx.gen_network(ctx.seed)
+            simulate_fn_visu = eqx.filter_jit(make_simulate_simple_mppi(ctx))
+            visualise_policy(data, model, view, ctx, nets, key_main, simulate_fn_visu)
+            opt_states = tuple([optimiser.init(eqx.filter(net, eqx.is_array)) for net in nets])
 
             # Determine single-GPU or multi-GPU stepping
-            step_fn = step_multi_gpu if ctx.num_gpu > 1 else step_single_gpu
+            # step_fn = step_multi_gpu if ctx.num_gpu > 1 else step_single_gpu
 
             # Initial dataset
             key_main, key_data, key_sim = jax.random.split(key_main, num=3)
@@ -114,8 +114,8 @@ def run(
 
                 # One training step
                 t0 = time.perf_counter_ns()
-                net, opt_state, loss_value, res = step_fn(
-                    dxs, net, ctx, key_sim, opt_state, optimiser, simulate_fn, loss_fn
+                nets, opt_states, loss_values, res = step_fn(
+                    dxs, nets, ctx, key_sim, opt_states, optimiser, simulate_fn, loss_fn
                 )
                 t1 = time.perf_counter_ns()
                 _, dxs, terminated, _ = res
@@ -125,8 +125,11 @@ def run(
                 dxs = data_manager.reset_data(dxs, ctx, key_data, terminated=terminated)
 
                 # Log step metrics
-                logger.log({"loss": float(loss_value), "time_ms": (t1 - t0) * 1e-6})
-                es.set_postfix({"loss":float(loss_value)})
+                loss_p, loss_v = loss_values
+                logger.log({"loss policy": float(loss_p),
+                            "loss value": float(loss_v),
+                            "time_ms": (t1 - t0) * 1e-6})
+                es.set_postfix({"loss_p":float(loss_p), "loss_v":float(loss_v)})
                 # Accumulate stats
                 # stats["loss"] += float(loss_value)
                 # stats["cost"] += float(traj_cost)
@@ -136,7 +139,7 @@ def run(
                 if (e + 1) % ctx.eval == 0 or e == ctx.epochs - 1:
                     if not headless:
                         visualise_policy(
-                            data, model, view, ctx, net, key_vis, simulate_fn_visu
+                            data, model, view, ctx, nets, key_vis, simulate_fn_visu
                         )
                     # Save model checkpoint
                     # task_name = getattr(ctx, "task", "model")
