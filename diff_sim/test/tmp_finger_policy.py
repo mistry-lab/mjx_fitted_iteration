@@ -12,7 +12,7 @@ import optax
 import diff_sim
 from diff_sim.loss_funcs import loss_fn_policy_det
 from diff_sim.simulation.simulate import make_simulate_fn_fd
-from diff_sim.context.meta_context import Context, ContextMPPI
+from diff_sim.context.meta_context import Context
 from diff_sim.runner_fn import run
 from diff_sim.solver.mppi import ParamtersMPPI, mppi
 
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         # u = net(x, policy_key)
         def net_mppi(dx,key):
             x = jnp.concatenate([dx.qpos, dx.qvel])
-            return jax.lax.stop_gradient(net(x,key))
+            return net(x, key)
         u = mppi(dx,policy_key,net_mppi)
         return dx, u
 

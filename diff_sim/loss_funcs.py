@@ -1,8 +1,59 @@
+import jax
 import jax.numpy as jnp
 import equinox as eqx
 import mujoco.mjx as mjx
 from typing import Callable
 from diff_sim.context.meta_context import Context
+
+
+def loss_fn_fitted_policy_and_value(
+        model: eqx.Module, dxs: mjx.Data, user_key: jnp.ndarray, ctx: Context, simulate_fn: Callable) -> tuple[
+    jnp.ndarray, tuple[jnp.ndarray, mjx.Data, jnp.ndarray, jnp.ndarray]
+]:
+    """
+        Loss function for the fitted value iteration to learn value/policy
+        Args:
+            model: Network model
+            dxs: mjx.Data (batch)
+            user_key: jnp.ndarray, random user_key for sub calls
+            simulate_fn: Function to simulate batch of trajectories.
+        Returns:
+            jnp.ndarray, loss value
+
+        Notes:
+            We compute the target value over the entire trajectory and fit the value function over the batch
+            loss = 1/B * sum_{b=1}^{B} sum_{t=1}^{T} (v(x_{b,t}) - y_{b,t})^2
+    """
+    value_fn = model.value_fn
+    policy_fn = model.policy_fn
+
+    @jax.vmap
+    def v_diff(x):
+        v_seq = jax.vmap(value_fn)(x)
+        v0, v1 = v_seq[0:-1], v_seq[1:]
+        return v0 - v1, v_seq[-1]
+
+    @jax.vmap
+    def td_cost(diff, term, cost):
+        v_diff_cost = diff - cost[:-1]
+        v_term_cost = term - cost[-1]
+        return jnp.sum(jnp.square(v_diff_cost)) + jnp.square(v_term_cost)
+
+    @jax.vmap
+    def policy_cost(x, us):
+        pred = jax.vmap(policy_fn)(x)
+        return jnp.sum(jnp.square(pred - us))
+
+    dxs, xs, us, costs, _, terminated = simulate_fn(dxs, user_key, model) #xs and us shape: (B, T, nu), (B, T, nx)
+    B, T, _ = xs.shape
+    diff, term = v_diff(xs)
+    traj_costs = jnp.mean(jnp.sum(costs, axis=-1))
+    value_costs = jnp.mean(td_cost(diff.reshape(B, T-1), term.reshape(B, 1), costs))
+    policy_costs = jnp.mean(policy_cost(xs, us).flatten())
+    # return one cost if policy is a projection of value function else return both costs
+    return value_costs + policy_costs, (traj_costs, dxs, terminated, xs)
+    return (value_costs, policy_costs), (traj_costs, dxs, terminated, xs)
+    # return jnp.mean(cost(x, costs)), (cost(x, costs), dxs, terminated, x)
 
 def loss_fn_policy_det(model: eqx.Module, dxs:mjx.Data, user_key: jnp.ndarray, ctx: Context,  simulate_fn: Callable) -> tuple[
     jnp.ndarray, tuple[jnp.ndarray, mjx.Data, jnp.ndarray, jnp.ndarray]]:

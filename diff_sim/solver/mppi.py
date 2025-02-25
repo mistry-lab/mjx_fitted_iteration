@@ -27,10 +27,8 @@ def mppi(dx,key,net_mppi,ctx:ParamtersMPPI):
         u = u0 + du
         dx = ctx.set_control(dx, u)
         cost_r = ctx.run_cost(ctx.mx, dx)
-        
         dx = mjx.step(ctx.mx,dx)
         x = jnp.concatenate([dx.qpos, dx.qvel])
-
         return (dx, key), (x,cost_r,du)
     
     def terminal_cost(mx, dx, key):
@@ -38,13 +36,13 @@ def mppi(dx,key,net_mppi,ctx:ParamtersMPPI):
 
     def rollout(dx, key):
         x_init = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
-        (dx, _), (xs,cost_r,dus) = jax.lax.scan(step, (dx, key), us)
+        (dx, _), (xs,costs_r,dus) = jax.lax.scan(step, (dx, key), us)
 
         xs = jnp.concatenate([x_init.reshape(1, -1), xs], axis=0)
         costs_r = jnp.concatenate(
                 [costs_r, jnp.expand_dims(terminal_cost(ctx.mx, dx, key), axis=0)], axis=0
             )
-        return (xs,cost_r,dus)
+        return (xs,costs_r,dus)
 
     rkey, ukey = jax.random.split(key)
     rkeys = jax.random.split(rkey, num= ctx.nrollout)
