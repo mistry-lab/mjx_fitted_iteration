@@ -8,6 +8,16 @@ from typing import Callable
 import equinox
 from dataclasses import dataclass
 
+
+def upscale(x):
+    """Convert data to 64-bit precision."""
+    if hasattr(x, 'dtype'):
+        if x.dtype == jnp.int32:
+            return jnp.int64(x)
+        elif x.dtype == jnp.float32:
+            return jnp.float64(x)
+    return x
+
 def prepare_sensitivity(dx_template, target_fields=('qpos','qvel','ctrl')):
     """
     Precompute flatten/unflatten, plus which elements of 'dx_template' are relevant
@@ -183,6 +193,7 @@ def make_loss_fn(
     @equinox.filter_jit
     def simulate_trajectory(U: jnp.ndarray):
         dx0 = mjx.make_data(mx)
+        dx0 = jax.tree.map(upscale, dx0)
         dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(qpos_init))
         dx0 = mjx.step(mx, dx0)  # initial sync
 

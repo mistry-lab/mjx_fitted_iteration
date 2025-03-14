@@ -57,7 +57,7 @@ if __name__ == "__main__":
 
     # 4) Optimize
     pmp = PMP(loss=loss_fn)
-    optimal_U = pmp.solve(U0=jnp.zeros((Nsteps, nu)), learning_rate=0.5, max_iter=50)
+    optimal_U = pmp.solve(U0=jnp.zeros((Nsteps, nu)), learning_rate=0.5, max_iter=10)
 
     from diff_sim.utils.mj import visualise_traj_generic
     from diff_sim.traj_opt.pmp_fd import simulate_trajectory

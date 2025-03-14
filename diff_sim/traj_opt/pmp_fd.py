@@ -32,6 +32,15 @@ def filter_state_data(dx: mjx.Data):
         dx.mocap_quat
     )
 
+def upscale(x):
+    """Convert data to 64-bit precision."""
+    if hasattr(x, 'dtype'):
+        if x.dtype == jnp.int32:
+            return jnp.int64(x)
+        elif x.dtype == jnp.float32:
+            return jnp.float64(x)
+    return x
+
 def make_step_fn(
     mx,
     set_control_fn: Callable,
@@ -278,6 +287,7 @@ def simulate_trajectory(
 
     # Prepare the initial dx
     dx0 = mjx.make_data(mx)
+    dx0 = jax.tree.map(upscale, dx0)
     dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(qpos_init))
     dx0 = mjx.step(mx,dx0)
     # dx0 = mjx.step(mx,dx0)
