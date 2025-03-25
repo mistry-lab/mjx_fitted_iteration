@@ -10,6 +10,8 @@ from jax.flatten_util import ravel_pytree
 import numpy as np
 from jax._src.util import unzip2
 
+from diff_sim.traj_opt.ilqr import upscale
+
 config.update('jax_default_matmul_precision', 'high')
 config.update("jax_enable_x64", True)
 
@@ -223,6 +225,7 @@ def simulate_trajectory(mx, qpos_init, running_cost_fn, terminal_cost_fn, step_f
         return dx, (state, c)
 
     dx0 = mjx.make_data(mx)
+    dx0 = jax.tree_map(upscale, dx0)
     dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(qpos_init))
     dx_final, (states, costs) = jax.lax.scan(scan_step_fn, dx0, length=length)
     total_cost = jnp.sum(costs) + terminal_cost_fn(dx_final)
