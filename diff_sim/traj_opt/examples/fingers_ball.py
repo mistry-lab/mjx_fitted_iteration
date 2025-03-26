@@ -96,7 +96,7 @@ if __name__ == "__main__":
     loss = make_loss_fn(mx, qpos, set_control, running_cost, terminal_cost, fd_cache)
 
     l, x = loss(u0)
-    visualise_traj_generic(jnp.expand_dims(x, axis=0), idata, model, sleep=0.1)
+    visualise_traj_generic(jnp.expand_dims(x, axis=0), idata, model, sleep=0.01)
 
     pmp = PMP(loss=lambda x: loss(x)[0])
     optimal_U = pmp.solve(U0=u0, learning_rate=0.001, max_iter=100)

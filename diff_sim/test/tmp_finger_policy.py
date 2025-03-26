@@ -94,8 +94,8 @@ if __name__ == "__main__":
 
     params_mmpi = ParamtersMPPI(
         temp=0.1,
-        horizon=8,
-        nrollout=10,
+        horizon=32,
+        nrollout=15,
         mx=mjx.put_model(model),
         run_cost=running_cost,
         terminal_cost=terminal_cost,
@@ -105,7 +105,8 @@ if __name__ == "__main__":
     def policy(nets: eqx.Module, mx: mjx.Model, dx: mjx.Data, policy_key: jnp.ndarray
                ) -> tuple[mjx.Data, jnp.ndarray]:
         # x = jnp.concatenate([dx.qpos, dx.qvel])
-        # u = net(x, policy_key)
+        # u = nets(x, policy_key)
+
         net_p, net_v = nets
         def net_p_fn(dx,key):
             x = jnp.concatenate([dx.qpos, dx.qvel])
@@ -114,6 +115,7 @@ if __name__ == "__main__":
             x = jnp.concatenate([dx.qpos, dx.qvel])
             return net_v(x, key)
         u = mppi(dx,policy_key,net_p_fn, net_v_fn, params_mmpi)
+        # u = jax.random.normal(policy_key, shape=2)
         return dx, u
 
 
@@ -121,8 +123,8 @@ if __name__ == "__main__":
         lr=3e-3,
         num_gpu=1,
         seed=0,
-        nsteps=200,
-        ntotal=200,
+        nsteps=20,
+        ntotal=10000,
         epochs=100,
         batch=50,
         samples=1,

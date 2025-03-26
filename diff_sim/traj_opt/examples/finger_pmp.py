@@ -7,6 +7,12 @@ from mujoco import mjx
 import equinox
 from diff_sim.traj_opt.pmp import PMP, make_loss
 
+
+jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
+jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
+jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
+jax.config.update("jax_persistent_cache_enable_xla_caches", "xla_gpu_per_fusion_autotune_cache_dir")
+
 def upscale(x):
     """Convert data to 64-bit precision."""
     if hasattr(x, 'dtype'):
@@ -17,13 +23,14 @@ def upscale(x):
     return x
 
 if __name__ == "__main__":
+
     path = "../../xmls/finger_mjx.xml"
     model = mujoco.MjModel.from_xml_path(path)
     mx = mjx.put_model(model)
     dx = mjx.make_data(mx)
     dx = jax.tree.map(upscale, dx)
     qpos_init = jnp.array([.1, 0, -.8])
-    Nsteps, nu = 300, 2
+    Nsteps, nu = 200, 2
     U0 = jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 2
 
     def set_control(dx, u):
@@ -43,7 +50,7 @@ if __name__ == "__main__":
     grad_loss_fn = equinox.filter_jit(jax.jacrev(loss_fn))
 
     optimizer = PMP(loss=loss_fn, grad_loss=grad_loss_fn)
-    optimal_U = optimizer.solve(U0, learning_rate=0.2, max_iter=50)
+    optimal_U = optimizer.solve(U0, learning_rate=0.5, max_iter=60)
 
     from diff_sim.utils.mj_viewers import visualise_traj_generic
     from diff_sim.traj_opt.pmp import simulate_trajectory

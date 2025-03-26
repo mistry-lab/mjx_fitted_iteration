@@ -44,7 +44,8 @@ def mppi(dx,key,net_p_fn, net_v_fn,ctx:ParamtersMPPI):
         return (dx, key), (x,cost_r,u,du)
     
     def terminal_cost(mx, dx, key):
-        return net_v_fn(dx,key)
+        # return net_v_fn(dx,key)
+        return ctx.terminal_cost(mx,dx)
 
     def rollout(dx, key,u0s):
         x_init = jnp.concatenate([dx.qpos, dx.qvel], axis=0)

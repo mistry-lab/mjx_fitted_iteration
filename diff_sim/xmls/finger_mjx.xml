@@ -28,7 +28,7 @@
     </asset>
 
 <!--   important mjx options  -->
-  <option timestep="0.0075" impratio="10" iterations="100" ls_iterations="4">
+  <option timestep="0.01" impratio="10" iterations="1" ls_iterations="4">
     <flag eulerdamp="disable"/>
   </option>
 
@@ -83,4 +83,9 @@
         <motor name="proximal" joint="proximal" gear="3"/>
         <motor name="distal" joint="distal" gear="1.5"/>
     </actuator>
+
+    <contact>
+        <exclude body1="proximal" body2="distal"/>
+    </contact>
+
 </mujoco>

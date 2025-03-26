@@ -26,16 +26,16 @@ def step_mppi(dxs, models, ctx, user_key, states, optim, simulate_fn, loss_fns):
     # Fit policy network
     key_p, key_v, user_key = jax.random.split(user_key, num=3)
     loss_p, grads_p = eqx.filter_value_and_grad(loss_p_fn)(model_p, x, u, key_p)
-    loss_v, grads_v = eqx.filter_value_and_grad(loss_v_fn)(model_v, x, costs, key_v)
+    # loss_v, grads_v = eqx.filter_value_and_grad(loss_v_fn)(model_v, x, costs, key_v)
     
     # Update policy
     update_p, state_p = optim.update(grads_p, state_p, model_p)
     model_p = eqx.apply_updates(model_p, update_p)
     # Update value
-    update_v, state_v = optim.update(grads_v, state_v, model_v)
-    model_v = eqx.apply_updates(model_v, update_v)
+    # update_v, state_v = optim.update(grads_v, state_v, model_v)
+    # model_v = eqx.apply_updates(model_v, update_v)
 
-    return (model_p, model_v), (state_p, state_v), (loss_p, loss_v), (costs, dxs, terminated, x)
+    return (model_p, model_v), (state_p, state_v), (loss_p, 0.), (costs, dxs, terminated, x)
 
 @eqx.filter_jit
 def step_single_gpu(dxs, model, ctx, user_key, state, optim, simulate_fn, loss_fn):

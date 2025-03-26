@@ -5,6 +5,7 @@ from mujoco import mjx
 from jax import config
 from dataclasses import dataclass
 from typing import Callable
+from time import perf_counter_ns as clock
 
 config.update('jax_default_matmul_precision', 'high')
 config.update("jax_enable_x64", True)
@@ -77,9 +78,12 @@ class PMP:
         """
         U = U0
         for i in range(max_iter):
+            t0 = clock()
             g = self.grad_loss(U)
             U_new = U - learning_rate * g
             f_val = self.loss(U_new)
+            t1 = clock()
+            print(f"Iteration time {1.e-9*(t1-t0)}")
             print(f"Iteration {i}: cost={f_val}")
             if jnp.linalg.norm(U_new - U) < tol or jnp.isnan(g).any():
                 return U_new

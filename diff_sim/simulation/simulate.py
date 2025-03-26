@@ -26,7 +26,8 @@ def _simulate_fn_mppi(ctx: Context, make_step_fn=Callable):
             )  # To get the ctrl inside dx for the cost. TODO: optimise this.
             cost_r = ctx.run_cost(ctx.mx, dx)
             cost_t = ctx.terminal_cost(ctx.mx, dx)
-            dx = step_fn(dx, u)
+            # dx = step_fn(dx, u)
+            dx = mjx.step(ctx.mx, dx)
 
             terminated_s = ctx.is_terminal(ctx.mx, dx)  # State termination
             x = jnp.concatenate([dx.qpos, dx.qvel], axis=0)
@@ -88,7 +89,7 @@ def _simulate_fn_mppi(ctx: Context, make_step_fn=Callable):
         params_p, static_p = eqx.partition(net_p, eqx.is_array)
         params_v, static_v = eqx.partition(net_v, eqx.is_array)
         keys = jax.random.split(key, num=dxs.qpos.shape[0])
-        return jax.vmap(rollout, in_axes=(0, 0, None))(dxs, keys, (params_p, params_v))
+        return jax.lax.stop_gradient(jax.vmap(rollout, in_axes=(0, 0, None))(dxs, keys, (params_p, params_v)))
 
     return simulate
 
@@ -174,7 +175,7 @@ def _simulate_fn(ctx: Context, make_step_fn=Callable):
 
         params, static = eqx.partition(net, eqx.is_array)
         keys = jax.random.split(key, num=dxs.qpos.shape[0])
-        return jax.lax.stop_gradient(jax.vmap(rollout, in_axes=(0, 0, None))(dxs, keys, params))
+        return jax.vmap(rollout, in_axes=(0, 0, None))(dxs, keys, params)
 
     return simulate
 
