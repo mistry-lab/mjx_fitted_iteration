@@ -4,7 +4,7 @@ jax.config.update("jax_enable_x64", True)
 jax.config.update('jax_default_matmul_precision', 'high')
 import mujoco
 from mujoco import mjx
-from diff_sim.optim.pmp_fd_indexes import PMP, make_loss_fn, build_fd_cache
+from diff_sim.optim.pmp_fd_indexes import PMP, make_loss_fn, build_fd_cache, make_loss_fn_accfd
 from diff_sim.utils.mj_viewers import visualise_traj_generic
 
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     )
 
     # 3) Build the loss function with the new step fn
-    loss_fn = make_loss_fn(
+    loss_fn = make_loss_fn_accfd(
         mx=mx,
         qpos_init=qpos_init,
         set_ctrl_fn=set_control,

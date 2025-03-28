@@ -414,6 +414,40 @@ def make_loss_fn(
 
     return loss
 
+def make_loss_fn_accfd(
+        mx,
+        qpos_init: jnp.ndarray,
+        set_ctrl_fn: Callable[[mjx.Data, jnp.ndarray], mjx.Data],
+        running_cost_fn: Callable[[mjx.Data], float],
+        terminal_cost_fn: Callable[[mjx.Data], float],
+        fd_cache: FDCache,
+):
+    @jax.jit
+    def simulate_trajectory(U: jnp.ndarray):
+        dx0 = mjx.make_data(mx)
+        dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(qpos_init))
+        dx0 = mjx.step(mx, dx0)  # initial sync
+
+        def scan_body(dx, u):
+            # dx_next = single_arg_step_fn(dx, u)
+            dx_with_ctrl = set_ctrl_fn(dx, u)
+            dx_next = mjx.step(mx, dx_with_ctrl)
+
+            cost_t = running_cost_fn(dx_next)
+            state_t = jnp.concatenate([dx_next.qpos, dx_next.qvel])
+            return dx_next, (state_t, cost_t)
+
+        dx_final, (states, costs) = jax.lax.scan(scan_body, dx0, U)
+        # costs = costs.at[-1].set(0.)
+        total_cost = jnp.sum(costs) + terminal_cost_fn(dx_final)
+        return states, total_cost
+
+    def loss(U: jnp.ndarray):
+        state, total_cost = simulate_trajectory(U)
+        return total_cost, state
+
+    return loss
+
 
 @dataclass
 class PMP:
