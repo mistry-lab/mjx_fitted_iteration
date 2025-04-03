@@ -1,28 +1,26 @@
 import jax
 import jax.numpy as jnp
-jax.config.update("jax_enable_x64", True)
-jax.config.update('jax_default_matmul_precision', 'high')
+# jax.config.update("jax_enable_x64", True)
+# jax.config.update('jax_default_matmul_precision', 'high')
 import mujoco
 from mujoco import mjx
-# from diff_sim.optim.pmp_fd_indexes import PMP, make_loss_fn, build_fd_cache, make_loss_fn_accfd
-from diff_sim.optim.pmp_fd_indexes_adam import make_batch_loss_module, BatchTrajectory, train_batch_trajectories, simulate_trajectory_for_b
+from diff_sim.optim.pmp_fd_indexes_adam import make_batch_loss_module, train_batch_trajectories, simulate_trajectory_for_b
 from diff_sim.utils.mj_viewers import visualise_traj_generic
 
+# Jax compilation flags
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
 jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
 jax.config.update("jax_persistent_cache_enable_xla_caches", "xla_gpu_per_fusion_autotune_cache_dir")
-# jax.devices("cpu")[0]  # Get the CPU device
 
-
-def upscale(x):
-    """Convert data to 64-bit precision."""
-    if hasattr(x, 'dtype'):
-        if x.dtype == jnp.int32:
-            return jnp.int64(x)
-        elif x.dtype == jnp.float32:
-            return jnp.float64(x)
-    return x
+# def upscale(x):
+#     """Convert data to 64-bit precision."""
+#     if hasattr(x, 'dtype'):
+#         if x.dtype == jnp.int32:
+#             return jnp.int64(x)
+#         elif x.dtype == jnp.float32:
+#             return jnp.float64(x)
+#     return x
 
 if __name__ == "__main__":
  
@@ -37,12 +35,16 @@ if __name__ == "__main__":
         fd_cache = None  # or build_fd_cache(mx, dx, ("qpos","qvel"), 2)
     
         # 4.2: Problem setup
-        B = 1        # batch size
+        B = 4        # batch size
         T = 300        # number of steps
         nu = 2         # control dimension
         key = jax.random.PRNGKey(0)
     
-        qpos_init = jnp.array([-.8, 0, -.8])
+        # qpos_init = jnp.tile(jnp.array([-.8, 0, -.8]),B).reshape((B,3))
+        qpos_init =  jnp.array([[-0.7,  0. , -0.8],
+                                [-0.8,  0. , -0.7],
+                                [-0.9,  0. , -0.55],
+                                [-1.0,  0. , -0.8]])
     
         def running_cost(dx):
             pos_finger = dx.qpos[2]

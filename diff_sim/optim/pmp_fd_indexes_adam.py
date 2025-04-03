@@ -47,7 +47,7 @@ class BatchTrajectory(eqx.Module):
             """
             # Create data, set initial position
             dx0 = mjx.make_data(self.mx)
-            dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(self.qpos_init))
+            dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(self.qpos_init[b_idx]))
             dx0 = mjx.step(self.mx, dx0)  # initial sync
  
             # We store states and costs across T steps
@@ -112,7 +112,7 @@ def make_batch_loss_module(
 @jax.jit
 def simulate_trajectory_for_b(m: BatchTrajectory, b_idx: int):
     dx0 = mjx.make_data(m.mx)
-    dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(m.qpos_init))
+    dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(m.qpos_init[b_idx]))
     dx0 = mjx.step(m.mx, dx0)
 
     def scan_body(dx, t):
