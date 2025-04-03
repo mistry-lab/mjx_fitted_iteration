@@ -4,7 +4,6 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
-jax = {version = "0.4.33", extras = ["cuda12"]}
 equinox = "0.11.7"
 optax = "0.2.3"
 mujoco = "3.2.5"
@@ -14,6 +13,9 @@ wandb = "*"
 ipython = "*"
 matplotlib = "*"
 diff-sim = {file = ".", editable = true}
+etils = "*"
+jax = {extras = ["cuda12"], version = "==0.4.38"}
+jaxopt = "*"
 
 [dev-packages]
 
