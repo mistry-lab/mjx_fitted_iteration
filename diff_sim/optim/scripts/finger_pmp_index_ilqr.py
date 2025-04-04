@@ -63,8 +63,8 @@ if __name__ == "__main__":
                 set_control_fn=set_control,
                 running_cost_fn=running_cost,
                 terminal_cost_fn=terminal_cost,
-                alpha=0.1,
-                reg=1e-6
+                reg=1e-6,
+                ddp=False
             )
         
         # init_controls = 0.1 * jax.random.normal(key, (B, T, nu))
