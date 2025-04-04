@@ -11,81 +11,35 @@ from pydantic.dataclasses import dataclass
 
 config.update('jax_default_matmul_precision', 'high')
 config.update("jax_enable_x64", True)
- 
-# ------------------------------------------------------------------------
-# simulate_trajectory_ilqr remains unchanged
-# ------------------------------------------------------------------------
+
 @equinox.filter_jit
 def simulate_trajectory_ilqr(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost_fn, U):
     """
     Simulate a trajectory given a control sequence U for iLQR.
     """
-    def step_fn(x, u):
-        nq = mx.nq
-        dx = mjx.make_data(mx)
-        dx = dx.replace(
-            qpos=dx.qpos.at[:].set(x[:nq]),
-            qvel=dx.qvel.at[:].set(x[nq:])
-        )
+    def step_fn(dx, u):        
         dx = set_control_fn(dx, u)
         dx = mjx.step(mx, dx)
         x_next = jnp.concatenate([dx.qpos, dx.qvel])
         c = running_cost_fn(dx)
-        return x_next, (x, u, c)
+        return dx, (x_next, u, c)
     
-    dx_init = mjx.make_data(mx)
+    dx = mjx.make_data(mx)
     nq = mx.nq
-    qvel_init = jnp.zeros_like(dx_init.qvel)
-    x0 = jnp.concatenate([qpos_init, qvel_init])
-    x_final, (X_partial, U_out, C_partial) = jax.lax.scan(step_fn, x0, U)
+    dx = dx.replace(
+            qpos=dx.qpos.at[:].set(qpos_init[:nq]),
+            qvel=dx.qvel.at[:].set(jnp.zeros(nq))
+        )
+    dx_final, (X_partial, U_out, C_partial) = jax.lax.scan(step_fn, dx, U)
 
-    # Add final state and terminal cost
-    X = jnp.vstack((X_partial, x_final))
-    dx_final = mjx.make_data(mx)
-    dx_final = dx_final.replace(
-        qpos=dx_final.qpos.at[:].set(x_final[:nq]),
-        qvel=dx_final.qvel.at[:].set(x_final[nq:])
-    )
+    # Add initial state and terminal cost
+    qvel_init = jnp.zeros(mx.nv)
+    x0 = jnp.concatenate([qpos_init, qvel_init])
+    X = jnp.vstack((x0, X_partial))    
     term_c = terminal_cost_fn(dx_final)
     C = jnp.hstack((C_partial, term_c))
+
     return X, U_out, C
- 
-# Note : 
-# The following code, which carries the dx alongside the scan gives a different output. 
-# The controller does not bring the spinner up. Probably the way we are taking the derivative around
-# 0. for all the paramaters except qvel, qpos
-
-# @equinox.filter_jit
-# def simulate_trajectory_ilqr(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost_fn, U):
-#     """
-#     Simulate a trajectory given a control sequence U for iLQR.
-#     """
-#     def step_fn(dx, u):
-#         nq = mx.nq
-        
-#         dx = set_control_fn(dx, u)
-#         dx = mjx.step(mx, dx)
-#         x_next = jnp.concatenate([dx.qpos, dx.qvel])
-#         c = running_cost_fn(dx)
-#         return dx, (x_next, u, c)
-    
-#     dx = mjx.make_data(mx)
-#     nq = mx.nq
-#     dx = dx.replace(
-#             qpos=dx.qpos.at[:].set(qpos_init[:nq]),
-#             qvel=dx.qvel.at[:].set(jnp.zeros(nq))
-#         )
-    
-#     dx_final, (X_partial, U_out, C_partial) = jax.lax.scan(step_fn, dx, U)
-
-#     # Add initial state and terminal cost
-#     qvel_init = jnp.zeros(mx.nv)
-#     x0 = jnp.concatenate([qpos_init, qvel_init])
-#     X = jnp.vstack((x0, X_partial))
-    
-#     term_c = terminal_cost_fn(dx_final)
-#     C = jnp.hstack((C_partial, term_c))
-#     return X, U_out, C
 
  
 # ------------------------------------------------------------------------
@@ -263,23 +217,25 @@ def make_ilqr_step(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost
         """
         def rollout_for_alpha(alpha):
             # Define the step function that uses the given alpha.
-            def step_fn(carry, inp):
-                x = carry
+            def step_fn(dx, inp):
+                x = jnp.concatenate([dx.qpos, dx.qvel])
                 K_t, k_t, U_nom_t, X_nom_t = inp
                 u_new = U_nom_t + alpha * (k_t + K_t @ (x - X_nom_t))
-                x_next, r_cost = f_state_input(x, u_new)
-                return x_next, (u_new, r_cost)
-            x_final, (U_new, costs) = jax.lax.scan(step_fn, X[0], (K, k, U, X[:-1]))
-            # Compute terminal cost using the final state rollout.
+                dx = set_control_fn(dx, u_new)  
+                dx = mjx.step(mx, dx)
+                x_next = jnp.concatenate([dx.qpos, dx.qvel])
+                c = running_cost_fn(dx)
+                return dx, (x_next, u_new, c)
+            
+            dx = mjx.make_data(mx)
             nq = mx.nq
-            dx_final = mjx.make_data(mx)
-            dx_final = dx_final.replace(
-                qpos=dx_final.qpos.at[:].set(x_final[:nq]),
-                qvel=dx_final.qvel.at[:].set(x_final[nq:])
-            )
+            dx = dx.replace(
+                    qpos=dx.qpos.at[:].set(X[0][:nq]),
+                    qvel=dx.qvel.at[:].set(X[0][nq:])
+                )
+            dx_final, (_, U_new, C_partial) = jax.lax.scan(step_fn, dx, (K, k, U, X[:-1]))
             term_cost = terminal_cost_fn(dx_final)
-            C = jnp.sum(costs) + term_cost
-            total_cost = jnp.sum(C)
+            total_cost = jnp.sum(C_partial) + term_cost
             return U_new, total_cost
  
         # Vectorize the rollout for each candidate alpha in parallel.
