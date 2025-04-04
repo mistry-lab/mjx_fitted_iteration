@@ -4,7 +4,7 @@ jax.config.update('jax_default_matmul_precision', 'high')
 import jax.numpy as jnp
 import mujoco
 from mujoco import mjx
-from diff_sim.optim.ilqr import make_ilqr_step, ILQR
+from diff_sim.optim.ilqr import make_ilqr_step, ILQR, simulate_trajectory_ilqr
 from diff_sim.utils.mj_viewers import visualise_traj_generic
 
 # Jax compilation flags
@@ -23,12 +23,8 @@ def upscale(x):
     return x
 
 if __name__ == "__main__":
- 
-    # 4.1: Build model, data, fd_cache, etc.
-    
-
     with (jax.default_device(jax.devices("cpu")[0])):
-        model = mujoco.MjModel.from_xml_path("../xmls/finger_mjx.xml")
+        model = mujoco.MjModel.from_xml_path("xmls/finger_mjx.xml")
         mx = mjx.put_model(model)
         dx = mjx.make_data(mx)
         dx = jax.tree.map(upscale, dx)
@@ -90,3 +86,8 @@ if __name__ == "__main__":
         # # etc.
     
         # print("Done training.")
+        from diff_sim.utils.mj_viewers import visualise_traj_generic
+
+        d = mujoco.MjData(model)
+        x, _, _ = simulate_trajectory_ilqr(mx, qpos_init, set_control, running_cost, terminal_cost, U_opt)
+        visualise_traj_generic(jnp.expand_dims(x, axis=0), d, model)
