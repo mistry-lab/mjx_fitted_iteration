@@ -184,13 +184,18 @@ def make_ilqr_step(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost
         i_best = jnp.argmin(cost_candidates)
         best_U = jax.tree_util.tree_map(lambda arr: arr[i_best], U_candidates)
         best_cost = cost_candidates[i_best]
+        jax.debug.print("i_best : {}", i_best)
         return best_U, best_cost
  
     @equinox.filter_jit
     def forward_pass(X, U, K, k):
         # Define candidate alphas (for example, 1.0, 0.5, 0.25, 0.125).
-        alpha_candidates = jnp.array([1.0, 0.5, 0.25, 0.125], dtype=jnp.float64)
-        return forward_pass_ls(X, U, K, k, alpha_candidates)[0]
+        alpha_candidates = jnp.array([1.00000000e+00, 9.09090909e-01,
+                        6.83013455e-01, 4.24097618e-01,
+                        2.17629136e-01, 9.22959982e-02,
+                        3.23491843e-02, 9.37040641e-03,
+                        2.24320079e-03, 4.43805318e-04, 0.00000001], dtype=jnp.float64)
+        return forward_pass_ls(X, U, K, k, alpha_candidates)
 
     # @equinox.filter_jit
     # def forward_pass(X, U, K, k):
@@ -210,8 +215,8 @@ def make_ilqr_step(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost
         X, U_out, C = simulate_trajectory_ilqr(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost_fn, U)
         f_x, f_u, c_x, c_u, c_xx, c_ux, c_uu = linearize_dynamics_and_cost(X, U)
         K, k = backward_pass(f_x, f_u, c_x, c_u, c_xx, c_ux, c_uu, X[-1])
-        U_new = forward_pass(X, U, K, k)
-        return U_new, C
+        U_new, C_new = forward_pass(X, U, K, k)
+        return U_new, C_new
     
     return ilqr_step
 

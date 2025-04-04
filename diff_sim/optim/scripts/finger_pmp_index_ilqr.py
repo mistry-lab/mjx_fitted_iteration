@@ -33,7 +33,7 @@ if __name__ == "__main__":
     
         # 4.2: Problem setup
         B = 4        # batch size
-        T = 300        # number of steps
+        T = 300         # number of steps
         nu = 2         # control dimension
         key = jax.random.PRNGKey(0)
     
@@ -42,7 +42,7 @@ if __name__ == "__main__":
         #                         [-0.8,  0. , -0.7],
         #                         [-0.9,  0. , -0.55],
         #                         [-1.0,  0. , -0.8]])
-        qpos_init = jnp.array([-0.8, 0, -0.8])
+        qpos_init = jnp.array([-0.8, 0, -3.1])
     
         def set_control(dx, u):
             return dx.replace(ctrl=dx.ctrl.at[:].set(u))
@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
         def terminal_cost(dx):
             pos_finger = dx.qpos[2]
-            return 1 * pos_finger ** 2
+            return 1. * pos_finger ** 2
     
         # 4.3: Create the batch module
         ilqr_step = make_ilqr_step(
@@ -68,7 +68,7 @@ if __name__ == "__main__":
             )
         
         # init_controls = 0.1 * jax.random.normal(key, (B, T, nu))
-        U0 = jax.random.normal(jax.random.PRNGKey(0), (300, nu)) * 10
+        U0 = jax.random.normal(jax.random.PRNGKey(0), (T, nu)) * 10
 
         ilqr = ILQR(ilqr_step)
         U_opt, cost = ilqr.solve(U0= U0)

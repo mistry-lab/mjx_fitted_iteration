@@ -66,8 +66,8 @@
             <geom name="proximal_decoration" type="cylinder" fromto="0 -.033 0 0 .033 0" size=".034" material="decoration" contype="0" conaffinity="0"/>
         </body>
 
-        <body name="spinner" pos="-.2 0 -.4">
-            <joint name="hinge" range="-50 50" frictionloss=".01" damping=".35" limited="false"/>
+        <body name="spinner" pos="-.2 0 -.35">
+            <joint name="hinge" range="-50 50" frictionloss=".01" damping=".2" limited="false"/>
             <geom name="spinner" type="capsule" size=".04 .09" material="self" pos="0. 0 0" contype="1" conaffinity="1"/>
             <!-- Decoration -->
             <geom name="spinner_decoration" type="cylinder" fromto="0 -.045 0 0 .045 0" size=".02" material="decoration" contype="0" conaffinity="0"/>
