@@ -1,15 +1,25 @@
 import jax
 import jax.numpy as jnp
+from jedi.inference.value.iterable import Sequence
 from mujoco import mjx
 import equinox
 from typing import Callable
 import time
-
 from jax import config
 from pydantic.dataclasses import dataclass
-
 from diff_sim.optim.meta_context import Context
 
+
+def upscale(x):
+    """
+    Upscale the data type of x if it is int32 or float32.
+    """
+    if "dtype" in dir(x):
+        if x.dtype == jnp.int32:
+            return jnp.int64(x)
+        elif x.dtype == jnp.float32:
+            return jnp.float64(x)
+    return x
 
 @equinox.filter_jit
 def simulate_trajectory_ilqr(
@@ -29,6 +39,7 @@ def simulate_trajectory_ilqr(
         return dx, (x_next, u, c)
 
     dx = mjx.make_data(mx)
+    dx = jax.tree.map(upscale, dx)
     nq = mx.nq
     dx = dx.replace(
         qpos=dx.qpos.at[:].set(qpos_init[:nq]), qvel=dx.qvel.at[:].set(jnp.zeros(nq))
@@ -49,7 +60,7 @@ def simulate_trajectory_ilqr(
 # iLQR Step and Linearization functions (unchanged)
 # ------------------------------------------------------------------------
 
-def make_ilqr_step(qpos_init, step_fn, ctx):
+def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
     running_cost_fn = ctx.running_cost
     terminal_cost_fn = ctx.terminal_cost 
     mx = ctx.mx
@@ -64,16 +75,18 @@ def make_ilqr_step(qpos_init, step_fn, ctx):
                 qpos=x_[:nq],
                 qvel=x_[nq:]
             )
+            dx_local = jax.tree.map(upscale, dx_local)
             return terminal_cost_fn(dx_local)
         t_c = tc(x)
         t_c_x = jax.grad(tc)(x)
-        t_c_xx = jax.jacfwd(lambda xx: jax.grad(tc)(xx))(x)
+        t_c_xx = jac_fn(lambda xx: jax.grad(tc)(xx))(x)
         return t_c, t_c_x, t_c_xx
  
     @equinox.filter_jit
     def f_state_input(x, u):
         nq = mx.nq
         dx = mjx.make_data(mx)
+        dx = jax.tree.map(upscale, dx)
         dx = dx.replace(
             qpos=dx.qpos.at[:].set(x[:nq]),
             qvel=dx.qvel.at[:].set(x[nq:])
@@ -92,13 +105,13 @@ def make_ilqr_step(qpos_init, step_fn, ctx):
         """
         def single_lin(x, u):
             x_next, c = f_state_input(x, u)
-            f_x = jax.jacfwd(lambda xx: f_state_input(xx, u)[0])(x)
-            f_u = jax.jacfwd(lambda uu: f_state_input(x, uu)[0])(u)
+            f_x = jac_fn(lambda xx: f_state_input(xx, u)[0])(x)
+            f_u = jac_fn(lambda uu: f_state_input(x, uu)[0])(u)
             c_x = jax.grad(lambda xx: f_state_input(xx, u)[1])(x)
             c_u = jax.grad(lambda uu: f_state_input(x, uu)[1])(u)
-            c_xx = jax.jacfwd(lambda xx: jax.grad(lambda xxx: f_state_input(xxx, u)[1])(xx))(x)
-            c_uu = jax.jacfwd(lambda uu: jax.grad(lambda uuu: f_state_input(x, uuu)[1])(uu))(u)
-            c_ux = jax.jacfwd(lambda xx: jax.grad(lambda uu: f_state_input(xx, uu)[1])(u))(x)
+            c_xx = jac_fn(lambda xx: jax.grad(lambda xxx: f_state_input(xxx, u)[1])(xx))(x)
+            c_uu = jac_fn(lambda uu: jax.grad(lambda uuu: f_state_input(x, uuu)[1])(uu))(u)
+            c_ux = jac_fn(lambda xx: jax.grad(lambda uu: f_state_input(xx, uu)[1])(u))(x)
             return f_x, f_u, c_x, c_u, c_xx, c_ux, c_uu
         
         f_x_all, f_u_all, c_x_all, c_u_all, c_xx_all, c_ux_all, c_uu_all = jax.vmap(single_lin)(X[:-1], U)
@@ -111,8 +124,8 @@ def make_ilqr_step(qpos_init, step_fn, ctx):
         """
         def single_lin(x, u):
             x_next, c = f_state_input(x, u)
-            f_x = jax.jacfwd(lambda xx: f_state_input(xx, u)[0])(x)
-            f_u = jax.jacfwd(lambda uu: f_state_input(x, uu)[0])(u)
+            f_x = jac_fn(lambda xx: f_state_input(xx, u)[0])(x)
+            f_u = jac_fn(lambda uu: f_state_input(x, uu)[0])(u)
             f_xx = jax.hessian(lambda xx: f_state_input(xx, u)[0])(x)
             # If needed, you can separate f_ux if it's not symmetrical : 
             f_ux = jax.jacobian(lambda xx:jax.jacobian(lambda uu: f_state_input(xx, uu)[0])(u))(x)
@@ -120,9 +133,9 @@ def make_ilqr_step(qpos_init, step_fn, ctx):
             # f_uu = jax.hessian(lambda uu: f_state_input(x, uu)[0])(u)
             c_x = jax.grad(lambda xx: f_state_input(xx, u)[1])(x)
             c_u = jax.grad(lambda uu: f_state_input(x, uu)[1])(u)
-            c_xx = jax.jacfwd(lambda xx: jax.grad(lambda xxx: f_state_input(xxx, u)[1])(xx))(x)
-            c_uu = jax.jacfwd(lambda uu: jax.grad(lambda uuu: f_state_input(x, uuu)[1])(uu))(u)
-            c_ux = jax.jacfwd(lambda xx: jax.grad(lambda uu: f_state_input(xx, uu)[1])(u))(x)
+            c_xx = jac_fn(lambda xx: jax.grad(lambda xxx: f_state_input(xxx, u)[1])(xx))(x)
+            c_uu = jac_fn(lambda uu: jax.grad(lambda uuu: f_state_input(x, uuu)[1])(uu))(u)
+            c_ux = jac_fn(lambda xx: jax.grad(lambda uu: f_state_input(xx, uu)[1])(u))(x)
             return f_x, f_u, f_xx, f_ux, c_x, c_u, c_xx, c_ux, c_uu
         
         f_x_all, f_u_all, f_xx_all, f_ux_all, c_x_all, c_u_all, c_xx_all, c_ux_all, c_uu_all = jax.vmap(single_lin)(X[:-1], U)
@@ -238,6 +251,7 @@ def make_ilqr_step(qpos_init, step_fn, ctx):
                 return dx, (x_next, u_new, c)
             
             dx = mjx.make_data(mx)
+            dx = jax.tree.map(upscale, dx)
             nq = mx.nq
             dx = dx.replace(
                     qpos=dx.qpos.at[:].set(X[0][:nq]),

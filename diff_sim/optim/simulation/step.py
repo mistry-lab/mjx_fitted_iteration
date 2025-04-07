@@ -216,7 +216,7 @@ def make_step_fn_fd(ctx: Context):
         d_x_flat_sub = Jx_rows[:, dx_flat_all_idx] @ g_array[dx_flat_all_idx]
         d_x_flat = scatter_rows(
             d_x_flat_sub, dx_flat_no_quat_idx, (dx_dim,)
-        )  # inner_idx : qithout quaternions
+        )  # inner_idx : without quaternions
 
         if dx_flat_quat_idx.size != 0:
             Jxq_rows = jax.vmap(fdx_for_quat)(qpos_init_quat_idx_rep, quat_ijk_idx_rep)
@@ -233,3 +233,6 @@ def make_step_fn_fd(ctx: Context):
 
     step_fn.defvjp(step_fn_fwd, step_fn_bwd)
     return step_fn
+
+def make_jac_fn(): return jax.jacfwd
+def make_jac_fn_fd(): return jax.jacrev

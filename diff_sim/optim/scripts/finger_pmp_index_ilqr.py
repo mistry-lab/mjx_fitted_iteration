@@ -1,23 +1,23 @@
 import os
 import jax
 import jax.numpy as jnp
-
+# TODO: we internally handle this in make data but if they don't have our fix we need to upscale
 jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_default_matmul_precision", "high")
 import mujoco
 from mujoco import mjx
 from diff_sim.utils.mj_viewers import visualise_traj_generic
 from diff_sim.optim.meta_context import Context
-from diff_sim.optim.simulation.step import make_step_fn, make_step_fn_fd
+from diff_sim.optim.simulation.step import make_step_fn, make_step_fn_fd, make_jac_fn, make_jac_fn_fd
 from diff_sim.optim.ilqr import ILQR, make_ilqr_step, simulate_trajectory_ilqr
 
 # Compilation option
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
 jax.config.update("jax_persistent_cache_min_entry_size_bytes", -1)
 jax.config.update("jax_persistent_cache_min_compile_time_secs", 0)
-jax.config.update(
-    "jax_persistent_cache_enable_xla_caches", "xla_gpu_per_fusion_autotune_cache_dir"
-)
+# jax.config.update(
+#     "jax_persistent_cache_enable_xla_caches", "xla_gpu_per_fusion_autotune_cache_dir"
+# )
 
 
 model_path = os.path.join(os.path.dirname(__file__), "../xmls/finger_mjx.xml")
@@ -64,14 +64,16 @@ if __name__ == "__main__":
         Nsteps, nu = 300, 2
 
         # 2) Select a step function (Implicit, FD or AD)
-        step_fn = make_step_fn(ctx) # Implicit
-        # step_fn = make_step_fn_fd(ctx)  # FD, TODO: does not work due to custom_vjp 
+        # step_fn = make_step_fn(ctx) # Implicit
+        step_fn = make_step_fn_fd(ctx)# FD, TODO: does not work due to custom_vjp
         # TODO : AD
-    
+
+        jac_fn = make_jac_fn_fd()
         # 4.3: Create the batch module
         ilqr_step = make_ilqr_step(
                 qpos_init=qpos_init,
                 step_fn=step_fn,
+                jac_fn=jac_fn,
                 ctx=ctx
             )
         
