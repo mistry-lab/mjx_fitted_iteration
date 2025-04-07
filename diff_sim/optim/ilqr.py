@@ -1,6 +1,5 @@
 import jax
 import jax.numpy as jnp
-# import mujoco
 from mujoco import mjx
 import equinox
 from typing import Callable
@@ -9,44 +8,53 @@ import time
 from jax import config
 from pydantic.dataclasses import dataclass
 
-config.update('jax_default_matmul_precision', 'high')
-config.update("jax_enable_x64", True)
+from diff_sim.optim.meta_context import Context
+
 
 @equinox.filter_jit
-def simulate_trajectory_ilqr(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost_fn, U):
+def simulate_trajectory_ilqr(
+    qpos_init, U, step_fn: Callable[[mjx.Data, jnp.ndarray], mjx.Data], ctx: Context
+):
     """
     Simulate a trajectory given a control sequence U for iLQR.
     """
-    def step_fn(dx, u):        
-        dx = set_control_fn(dx, u)
-        dx = mjx.step(mx, dx)
+    mx = ctx.mx
+
+    def step_fn_scan(dx, u):
+        # dx = set_control_fn(dx, u)
+        # dx = mjx.step(mx, dx)
+        dx = step_fn(dx, u)
         x_next = jnp.concatenate([dx.qpos, dx.qvel])
-        c = running_cost_fn(dx)
+        c = ctx.running_cost(dx)
         return dx, (x_next, u, c)
-    
+
     dx = mjx.make_data(mx)
     nq = mx.nq
     dx = dx.replace(
-            qpos=dx.qpos.at[:].set(qpos_init[:nq]),
-            qvel=dx.qvel.at[:].set(jnp.zeros(nq))
-        )
-    dx_final, (X_partial, U_out, C_partial) = jax.lax.scan(step_fn, dx, U)
+        qpos=dx.qpos.at[:].set(qpos_init[:nq]), qvel=dx.qvel.at[:].set(jnp.zeros(nq))
+    )
+    dx_final, (X_partial, U_out, C_partial) = jax.lax.scan(step_fn_scan, dx, U)
 
     # Add initial state and terminal cost
     qvel_init = jnp.zeros(mx.nv)
     x0 = jnp.concatenate([qpos_init, qvel_init])
-    X = jnp.vstack((x0, X_partial))    
-    term_c = terminal_cost_fn(dx_final)
+    X = jnp.vstack((x0, X_partial))
+    term_c = ctx.terminal_cost(dx_final)
     C = jnp.hstack((C_partial, term_c))
 
     return X, U_out, C
 
- 
+
 # ------------------------------------------------------------------------
 # iLQR Step and Linearization functions (unchanged)
 # ------------------------------------------------------------------------
- 
-def make_ilqr_step(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost_fn, reg=1e-6, ddp=False):
+
+def make_ilqr_step(qpos_init, step_fn, ctx):
+    running_cost_fn = ctx.running_cost
+    terminal_cost_fn = ctx.terminal_cost 
+    mx = ctx.mx
+    reg = ctx.reg
+    ddp = ctx.ddp
     @equinox.filter_jit
     def terminal_expansion(x):
         nq = mx.nq
@@ -70,8 +78,9 @@ def make_ilqr_step(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost
             qpos=dx.qpos.at[:].set(x[:nq]),
             qvel=dx.qvel.at[:].set(x[nq:])
         )
-        dx = set_control_fn(dx, u)
-        dx = mjx.step(mx, dx)
+        # dx = set_control_fn(dx, u)
+        # dx = mjx.step(mx, dx)
+        dx = step_fn(dx, u)
         x_next = jnp.concatenate([dx.qpos, dx.qvel])
         c = running_cost_fn(dx)
         return x_next, c
@@ -217,12 +226,13 @@ def make_ilqr_step(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost
         """
         def rollout_for_alpha(alpha):
             # Define the step function that uses the given alpha.
-            def step_fn(dx, inp):
+            def step_fn_rollout(dx, inp):
                 x = jnp.concatenate([dx.qpos, dx.qvel])
                 K_t, k_t, U_nom_t, X_nom_t = inp
                 u_new = U_nom_t + alpha * (k_t + K_t @ (x - X_nom_t))
-                dx = set_control_fn(dx, u_new)  
-                dx = mjx.step(mx, dx)
+                # dx = set_control_fn(dx, u_new)  
+                # dx = mjx.step(mx, dx)
+                dx = step_fn(dx,u_new)
                 x_next = jnp.concatenate([dx.qpos, dx.qvel])
                 c = running_cost_fn(dx)
                 return dx, (x_next, u_new, c)
@@ -233,7 +243,7 @@ def make_ilqr_step(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost
                     qpos=dx.qpos.at[:].set(X[0][:nq]),
                     qvel=dx.qvel.at[:].set(X[0][nq:])
                 )
-            dx_final, (_, U_new, C_partial) = jax.lax.scan(step_fn, dx, (K, k, U, X[:-1]))
+            dx_final, (_, U_new, C_partial) = jax.lax.scan(step_fn_rollout, dx, (K, k, U, X[:-1]))
             term_cost = terminal_cost_fn(dx_final)
             total_cost = jnp.sum(C_partial) + term_cost
             return U_new, total_cost
@@ -257,7 +267,7 @@ def make_ilqr_step(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost
     
     def ilqr_step(U0):
         U = U0
-        X, U_out, C = simulate_trajectory_ilqr(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost_fn, U)
+        X, U_out, C = simulate_trajectory_ilqr(qpos_init, U, step_fn, ctx)
         f_x, f_u, c_x, c_u, c_xx, c_ux, c_uu = linearize_dynamics_and_cost(X, U)
         K, k = backward_pass(f_x, f_u, c_x, c_u, c_xx, c_ux, c_uu, X[-1])
         U_new, C_new = forward_pass(X, U, K, k)
@@ -265,7 +275,7 @@ def make_ilqr_step(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost
     
     def ddp_step(U0):
         U = U0
-        X, U_out, C = simulate_trajectory_ilqr(mx, qpos_init, set_control_fn, running_cost_fn, terminal_cost_fn, U)
+        X, U_out, C = simulate_trajectory_ilqr(qpos_init, U, step_fn, ctx)
         f_x, f_u, f_xx, f_ux, c_x, c_u, c_xx, c_ux, c_uu = linearize_dynamics_and_cost_ddp(X, U)
         K, k = backward_pass_ddp(f_x, f_u, f_xx, f_ux, c_x, c_u, c_xx, c_ux, c_uu, X[-1])
         U_new, C_new = forward_pass(X, U, K, k)
@@ -316,7 +326,7 @@ class ILQR:
 # ------------------------------------------------------------------------
 # Define a simple ILQR context data structure for the outer while_loop.
 # ------------------------------------------------------------------------
- 
+
 # class _ILQRContext(PyTreeNode):
 #     """
 #     Holds iteration state for the while_loop-based iLQR solve.
@@ -345,8 +355,8 @@ class ILQR:
 #     def body(ctx: _ILQRContext) -> _ILQRContext:
 #         now = time.time()
 #         U_candidate, C_candidate = ilqr_step_fn(ctx.U)  # unconstrained candidate update from backward pass
-       
-       
+
+
 #         improved = (C_candidate < ctx.cost)
 
 #         new_cost = jnp.where(improved, C_candidate, ctx.cost)
