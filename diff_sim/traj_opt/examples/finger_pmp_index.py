@@ -24,35 +24,25 @@ if __name__ == "__main__":
     dx = mjx.make_data(mx)
     dx = jax.tree.map(upscale, dx)
     d = mujoco.MjData(model)
-    # qpos_init = jnp.array([-.8, 0, -.8])
 
+    qpos_init = jnp.array([-.8, 0, -.8])
+    Nsteps, nu = 300, 2
+    U0 = 0.2*jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 2
 
-    qpos_init = jnp.concatenate([jnp.array([-0.8, 0.0]), axis_angle_to_quat(jnp.array([0., 1., 0.]), jnp.array([0.8]))])
-    d.qpos = np.array(qpos_init)
-    Nsteps, nu = 150, 1
-    #make random control sequence
-    U0 = jnp.ones((Nsteps, nu)) * -.02
     def running_cost(dx):
-        # pos_finger = dx.qpos[2]
-        # jax.debug.print("angle {p}", p = pos_finger)
-        # jax.debug.print(f"quat of angle")
-        # quat_ref = axis_angle_to_quat(jnp.array([0., 1., 0.]), jnp.array([0.]))
-        # costR = jnp.sum((quat_to_mat(dx.qpos[2:6]) - quat_to_mat(quat_ref)) ** 2)
-        angle = quat_to_axis_angle(dx.qpos[2:6])[1]
-        # jax.debug.print("angle {p}", p=angle)
+        pos_finger = dx.qpos[2]
         u = dx.ctrl
-        return 0.0 * jnp.sum(u ** 2) + 0.001 * (angle ** 2)
+        return 0.002 * jnp.sum(u ** 2) + 0.001 * pos_finger ** 2
 
     def terminal_cost(dx):
-        # pos_finger = dx.qpos[2]
-        angle = quat_to_axis_angle(dx.qpos[2:6])[1]
-        return 4 * (angle ** 2)
+        pos_finger = dx.qpos[2]
+        return 4 * pos_finger ** 2
 
     def set_control(dx, u):
         return dx.replace(ctrl=dx.ctrl.at[:].set(u))
 
     fd_cache = build_fd_cache(
-        mx, dx, ('qpos', 'qvel'), 1
+        mx, dx, ('qpos', 'qvel'), 2
     )
 
     # 3) Build the loss function with the new step fn
