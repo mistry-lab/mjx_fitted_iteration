@@ -4,7 +4,8 @@ jax.config.update("jax_enable_x64", True)
 jax.config.update('jax_default_matmul_precision', 'high')
 import mujoco
 from mujoco import mjx
-from diff_sim.optim.pmp_fd_indexes import PMP, make_loss_fn, build_fd_cache, make_loss_fn_accfd
+from diff_sim.optim.simulation.fd_cache import build_fd_cache
+from diff_sim.optim.pmp_fd_indexes import PMP, make_loss_fn
 from diff_sim.utils.mj_viewers import visualise_traj_generic
 
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
