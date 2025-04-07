@@ -6,7 +6,6 @@ jax.config.update("jax_enable_x64", True)
 jax.config.update("jax_default_matmul_precision", "high")
 import mujoco
 from mujoco import mjx
-from diff_sim.optim.simulation.fd_cache import build_fd_cache
 from diff_sim.optim.pmp_fd_indexes import PMP, make_loss_fn
 from diff_sim.utils.mj_viewers import visualise_traj_generic
 from diff_sim.optim.meta_context import Context
@@ -28,13 +27,6 @@ def gen_model() -> mujoco.MjModel:
 
 if __name__ == "__main__":
     with jax.default_device(jax.devices("cpu")[0]):
-
-        model = gen_model()
-        d = mujoco.MjData(model)
-
-        qpos_init = jnp.array([-0.8, 0, -0.8])
-        Nsteps, nu = 300, 2
-        U0 = 0.2 * jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 2
 
         def running_cost(dx):
             pos_finger = dx.qpos[2]
@@ -63,9 +55,15 @@ if __name__ == "__main__":
             eps=1e-6,
         )
 
+        model = ctx.gen_model()
+        d = mujoco.MjData(model)
+        qpos_init = jnp.array([-0.8, 0, -0.8])
+        Nsteps, nu = ctx.nsteps, 2
+        U0 = 0.2 * jax.random.normal(jax.random.PRNGKey(0), (Nsteps, nu)) * 2
+
         # 2) Select a step function (Implicit, FD or AD)
-        # step_fn = make_step_fn(ctx) # Implicit
-        step_fn = make_step_fn_fd(ctx)  # FD
+        step_fn = make_step_fn(ctx) # Implicit
+        # step_fn = make_step_fn_fd(ctx)  # FD
         # TODO : AD
 
         # 3) Build the loss function with the new step fn

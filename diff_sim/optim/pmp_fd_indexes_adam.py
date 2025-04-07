@@ -7,6 +7,8 @@ import jax.numpy as jnp
 import equinox as eqx
 import optax
 import mujoco.mjx as mjx 
+
+from diff_sim.optim.meta_context import Context
  
 # ------------------------------------------------------------------------------
 # 1. An Equinox Module for storing B x T x nu controls and simulating them
@@ -24,10 +26,11 @@ class BatchTrajectory(eqx.Module):
     # We store large objects or callables as eqx.static_field().
     mx: mjx.Model = eqx.static_field()
     qpos_init: jnp.ndarray
+
+    step_fn: Callable[[mjx.Data, jnp.ndarray], mjx.Data] = eqx.static_field() 
     set_ctrl_fn: Callable[[Any, jnp.ndarray], Any] = eqx.static_field()
     running_cost_fn: Callable[[Any], float] = eqx.static_field()
     terminal_cost_fn: Callable[[Any], float] = eqx.static_field()
-    fd_cache: Any = eqx.static_field()  # If you need it
  
     def __call__(self) -> float:
         """
@@ -56,8 +59,7 @@ class BatchTrajectory(eqx.Module):
             def scan_body(dx, t):
                 # pick control from self.controls
                 u = self.controls[b_idx, t]  # shape (nu,)
-                dx_with_ctrl = self.set_ctrl_fn(dx, u)
-                dx_next = mjx.step(self.mx, dx_with_ctrl)
+                dx_next = self.step_fn(dx, u)
  
                 cost_t = self.running_cost_fn(dx_next)
                 return dx_next, cost_t
@@ -78,31 +80,24 @@ class BatchTrajectory(eqx.Module):
 # 2. Building a "make_batch_loss_module" style constructor (optional)
 # ------------------------------------------------------------------------------
 def make_batch_loss_module(
-    mx,
     qpos_init: jnp.ndarray,
-    set_ctrl_fn: Callable[[Any, jnp.ndarray], Any],
-    running_cost_fn: Callable[[Any], float],
-    terminal_cost_fn: Callable[[Any], float],
-    fd_cache: Any,
-    B: int,
-    T: int,
-    nu: int,
-    key: jax.random.PRNGKey
+    step_fn: Callable[[mjx.Data, jnp.ndarray], mjx.Data],
+    ctx: Context
 ) -> BatchTrajectory:
     """
     Utility to create a BatchTrajectory module with random initialization 
     for the controls of shape (B, T, nu).
     """
     # Example init for controls
-    init_controls = 0.1 * jax.random.normal(key, (B, T, nu))
+    init_controls = 0.1 * jax.random.normal(jax.random.PRNGKey(ctx.seed), (ctx.batch, ctx.nsteps, ctx.ctrl_dim)) # TODO: Fix this 
     return BatchTrajectory(
         controls=init_controls,
-        mx=mx,
+        mx=ctx.mx,
         qpos_init=qpos_init,
-        set_ctrl_fn=set_ctrl_fn,
-        running_cost_fn=running_cost_fn,
-        terminal_cost_fn=terminal_cost_fn,
-        fd_cache=fd_cache,
+        step_fn=step_fn,
+        set_ctrl_fn=ctx.set_control,
+        running_cost_fn=ctx.running_cost,
+        terminal_cost_fn=ctx.terminal_cost,
     )
  
 
