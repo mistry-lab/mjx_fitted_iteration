@@ -52,7 +52,7 @@ if __name__ == "__main__":
             terminal_cost=terminal_cost,
             set_control=set_control,
             ctrl_dim=2,
-            target_fields={"qpos", "qvel"},
+            target_fields={"qpos", "qvel", "ctrl"},
             eps=1e-6,
             reg = 1e-6,
             ddp=False
