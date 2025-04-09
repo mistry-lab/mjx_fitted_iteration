@@ -1,11 +1,9 @@
 import jax
 import jax.numpy as jnp
-from jedi.inference.value.iterable import Sequence
 from mujoco import mjx
 import equinox
 from typing import Callable
 import time
-from jax import config
 from pydantic.dataclasses import dataclass
 from diff_sim.optim.meta_context import Context
 
@@ -62,7 +60,8 @@ def simulate_trajectory_ilqr(
 
 def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
     running_cost_fn = ctx.running_cost
-    terminal_cost_fn = ctx.terminal_cost 
+    terminal_cost_fn = ctx.terminal_cost
+    set_control_fn = ctx.set_control
     mx = ctx.mx
     reg = ctx.reg
     ddp = ctx.ddp
@@ -81,6 +80,16 @@ def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
         t_c_x = jax.grad(tc)(x)
         t_c_xx = jac_fn(lambda xx: jax.grad(tc)(xx))(x)
         return t_c, t_c_x, t_c_xx
+
+    @equinox.filter_jit
+    def c_state_input(x, u):
+        dx = mjx.make_data(mx).replace(
+            qpos=x[:mx.nq],
+            qvel=x[mx.nq:],
+        )
+        dx = set_control_fn(dx, u)
+        dx = jax.tree.map(upscale, dx)
+        return running_cost_fn(dx)
  
     @equinox.filter_jit
     def f_state_input(x, u):
@@ -95,7 +104,7 @@ def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
         # dx = mjx.step(mx, dx)
         dx = step_fn(dx, u)
         x_next = jnp.concatenate([dx.qpos, dx.qvel])
-        c = running_cost_fn(dx)
+        c = c_state_input(x_next, u)
         return x_next, c
  
     @equinox.filter_jit
@@ -107,11 +116,11 @@ def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
             x_next, c = f_state_input(x, u)
             f_x = jac_fn(lambda xx: f_state_input(xx, u)[0])(x)
             f_u = jac_fn(lambda uu: f_state_input(x, uu)[0])(u)
-            c_x = jax.grad(lambda xx: f_state_input(xx, u)[1])(x)
-            c_u = jax.grad(lambda uu: f_state_input(x, uu)[1])(u)
-            c_xx = jac_fn(lambda xx: jax.grad(lambda xxx: f_state_input(xxx, u)[1])(xx))(x)
-            c_uu = jac_fn(lambda uu: jax.grad(lambda uuu: f_state_input(x, uuu)[1])(uu))(u)
-            c_ux = jac_fn(lambda xx: jax.grad(lambda uu: f_state_input(xx, uu)[1])(u))(x)
+            c_x = jac_fn(lambda xx: c_state_input(xx, u))(x)
+            c_u = jac_fn(lambda uu: c_state_input(x, uu))(u)
+            c_xx = jac_fn(lambda xx: jac_fn(lambda xxx: c_state_input(xxx, u))(xx))(x)
+            c_uu = jac_fn(lambda uu: jac_fn(lambda uuu: c_state_input(x, uuu))(uu))(u)
+            c_ux = jac_fn(lambda xx: jac_fn(lambda uu: c_state_input(xx, uu))(u))(x)
             return f_x, f_u, c_x, c_u, c_xx, c_ux, c_uu
         
         f_x_all, f_u_all, c_x_all, c_u_all, c_xx_all, c_ux_all, c_uu_all = jax.vmap(single_lin)(X[:-1], U)

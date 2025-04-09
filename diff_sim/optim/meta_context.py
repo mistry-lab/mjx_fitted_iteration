@@ -11,8 +11,8 @@ from mujoco import mjx
 class Context:
     # Callbacks
     gen_model: Callable[[], mujoco.MjModel]
-    running_cost: Callable[[mjx.Model, mjx.Data], jnp.ndarray]
-    terminal_cost: Callable[[mjx.Model, mjx.Data], jnp.ndarray]
+    running_cost: Callable[[mjx.Data], jnp.ndarray]
+    terminal_cost: Callable[[mjx.Data], jnp.ndarray]
     set_control: Callable[[mjx.Data, jnp.ndarray], mjx.Data]
 
     # Configuration

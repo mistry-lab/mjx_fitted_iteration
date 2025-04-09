@@ -8,7 +8,7 @@ import mujoco
 from mujoco import mjx
 from diff_sim.utils.mj_viewers import visualise_traj_generic
 from diff_sim.optim.meta_context import Context
-from diff_sim.optim.simulation.step import make_step_fn, make_step_fn_fd, make_jac_fn, make_jac_fn_fd
+from diff_sim.optim.simulation.step import make_step_fn, make_step_fn_fd
 from diff_sim.optim.ilqr import ILQR, make_ilqr_step, simulate_trajectory_ilqr
 
 # Compilation option
@@ -52,7 +52,7 @@ if __name__ == "__main__":
             terminal_cost=terminal_cost,
             set_control=set_control,
             ctrl_dim=2,
-            target_fields={"qpos", "qvel"},
+            target_fields={"qpos", "qvel", "ctrl"},
             eps=1e-6,
             reg = 1e-6,
             ddp=False
@@ -68,14 +68,13 @@ if __name__ == "__main__":
         step_fn = make_step_fn_fd(ctx)# FD, TODO: does not work due to custom_vjp
         # TODO : AD
 
-        jac_fn = make_jac_fn_fd()
         # 4.3: Create the batch module
         ilqr_step = make_ilqr_step(
                 qpos_init=qpos_init,
                 step_fn=step_fn,
-                jac_fn=jac_fn,
+                jac_fn=jax.jacfwd,
                 ctx=ctx
-            )
+        )
         
         # init_controls = 0.1 * jax.random.normal(key, (B, T, nu))
         U0 = jax.random.normal(jax.random.PRNGKey(0), (ctx.nsteps, nu)) * 10
