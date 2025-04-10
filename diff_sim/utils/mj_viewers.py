@@ -61,11 +61,19 @@ def visualise_traj(
                 time.sleep(time_until_next_step)
 
 
-def visualise_traj_generic(x, d: mujoco.MjData, m: mujoco.MjModel, sleep=0.01):
+def visualise_traj_generic(x, d: mujoco.MjData, m: mujoco.MjModel, mocap_targets=None, sleep=0.01):
+    if mocap_targets is not None:
+        assert x.shape[0] == mocap_targets.shape[0], f"x and mocap_targets should have the same batch size, but got {x.shape[0]} and {mocap_targets.shape[0]}."
+
 
     with viewer.launch_passive(m, d) as v:
         x = np.array(x)
         for b in range(x.shape[0]):
+            # Reset mocap targets at the beginning of each trajectory
+            if mocap_targets != None:
+                    # Assume single mocap target
+                    d.mocap_pos = mocap_targets[b][:3]
+                    d.mocap_quat = mocap_targets[b][3:]
             for i in range(x.shape[1]):
                 step_start = time.time()
                 qpos = x[b, i, : m.nq]

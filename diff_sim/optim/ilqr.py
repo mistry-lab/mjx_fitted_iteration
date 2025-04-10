@@ -21,7 +21,7 @@ def upscale(x):
 
 @equinox.filter_jit
 def simulate_trajectory_ilqr(
-    qpos_init, U, step_fn: Callable[[mjx.Data, jnp.ndarray], mjx.Data], ctx: Context
+    qpos_init, U, xdes, step_fn: Callable[[mjx.Data, jnp.ndarray], mjx.Data], ctx: Context
 ):
     """
     Simulate a trajectory given a control sequence U for iLQR.
@@ -42,6 +42,7 @@ def simulate_trajectory_ilqr(
     dx = dx.replace(
         qpos=dx.qpos.at[:].set(qpos_init[:nq]), qvel=dx.qvel.at[:].set(jnp.zeros(nq))
     )
+    dx = ctx.set_target(dx,xdes)
     dx_final, (X_partial, U_out, C_partial) = jax.lax.scan(step_fn_scan, dx, U)
 
     # Add initial state and terminal cost
@@ -58,7 +59,7 @@ def simulate_trajectory_ilqr(
 # iLQR Step and Linearization functions (unchanged)
 # ------------------------------------------------------------------------
 
-def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
+def make_ilqr_step(step_fn, jac_fn, ctx):
     running_cost_fn = ctx.running_cost
     terminal_cost_fn = ctx.terminal_cost
     set_control_fn = ctx.set_control
@@ -66,7 +67,7 @@ def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
     reg = ctx.reg
     ddp = ctx.ddp
     @equinox.filter_jit
-    def terminal_expansion(x):
+    def terminal_expansion(x, xdes):
         nq = mx.nq
         # x is [qpos; qvel]
         def tc(x_):
@@ -74,6 +75,7 @@ def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
                 qpos=x_[:nq],
                 qvel=x_[nq:]
             )
+            dx_local = ctx.set_target(dx_local,xdes)
             dx_local = jax.tree.map(upscale, dx_local)
             return terminal_cost_fn(dx_local)
         t_c = tc(x)
@@ -82,17 +84,18 @@ def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
         return t_c, t_c_x, t_c_xx
 
     @equinox.filter_jit
-    def c_state_input(x, u):
+    def c_state_input(x, u, xdes):
         dx = mjx.make_data(mx).replace(
             qpos=x[:mx.nq],
             qvel=x[mx.nq:],
         )
+        dx = ctx.set_target(dx,xdes)
         dx = set_control_fn(dx, u)
         dx = jax.tree.map(upscale, dx)
         return running_cost_fn(dx)
  
     @equinox.filter_jit
-    def f_state_input(x, u):
+    def f_state_input(x, u, xdes):
         nq = mx.nq
         dx = mjx.make_data(mx)
         dx = jax.tree.map(upscale, dx)
@@ -100,34 +103,37 @@ def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
             qpos=dx.qpos.at[:].set(x[:nq]),
             qvel=dx.qvel.at[:].set(x[nq:])
         )
+        dx = ctx.set_target(dx,xdes)
         # dx = set_control_fn(dx, u)
         # dx = mjx.step(mx, dx)
         dx = step_fn(dx, u)
         x_next = jnp.concatenate([dx.qpos, dx.qvel])
-        c = c_state_input(x_next, u)
+        c = c_state_input(x_next, u, xdes)
         return x_next, c
  
     @equinox.filter_jit
-    def linearize_dynamics_and_cost(X, U):
+    def linearize_dynamics_and_cost(X, U, xdes):
         """
         Linearize about (X,U). We have N steps.
         """
         def single_lin(x, u):
-            x_next, c = f_state_input(x, u)
-            f_x = jac_fn(lambda xx: f_state_input(xx, u)[0])(x)
-            f_u = jac_fn(lambda uu: f_state_input(x, uu)[0])(u)
-            c_x = jac_fn(lambda xx: c_state_input(xx, u))(x)
-            c_u = jac_fn(lambda uu: c_state_input(x, uu))(u)
-            c_xx = jac_fn(lambda xx: jac_fn(lambda xxx: c_state_input(xxx, u))(xx))(x)
-            c_uu = jac_fn(lambda uu: jac_fn(lambda uuu: c_state_input(x, uuu))(uu))(u)
-            c_ux = jac_fn(lambda xx: jac_fn(lambda uu: c_state_input(xx, uu))(u))(x)
+            f_state_in = lambda x,u: f_state_input(x, u, xdes)
+            c_state_in = lambda x,u: c_state_input(x, u, xdes)
+            x_next, c = f_state_in(x, u)
+            f_x = jac_fn(lambda xx: f_state_in(xx, u)[0])(x)
+            f_u = jac_fn(lambda uu: f_state_in(x, uu)[0])(u)
+            c_x = jac_fn(lambda xx: c_state_in(xx, u))(x)
+            c_u = jac_fn(lambda uu: c_state_in(x, uu))(u)
+            c_xx = jac_fn(lambda xx: jac_fn(lambda xxx: c_state_in(xxx, u))(xx))(x)
+            c_uu = jac_fn(lambda uu: jac_fn(lambda uuu: c_state_in(x, uuu))(uu))(u)
+            c_ux = jac_fn(lambda xx: jac_fn(lambda uu: c_state_in(xx, uu))(u))(x)
             return f_x, f_u, c_x, c_u, c_xx, c_ux, c_uu
         
         f_x_all, f_u_all, c_x_all, c_u_all, c_xx_all, c_ux_all, c_uu_all = jax.vmap(single_lin)(X[:-1], U)
         return f_x_all, f_u_all, c_x_all, c_u_all, c_xx_all, c_ux_all, c_uu_all
     
     @equinox.filter_jit
-    def linearize_dynamics_and_cost_ddp(X, U):
+    def linearize_dynamics_and_cost_ddp(X, U, xdes):
         """
         Linearize about (X,U). We have N steps.
         """
@@ -151,7 +157,7 @@ def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
         return f_x_all, f_u_all, f_xx_all, f_ux_all, c_x_all, c_u_all, c_xx_all, c_ux_all, c_uu_all
     
     @equinox.filter_jit
-    def backward_pass_ddp(f_x, f_u, f_xx, f_ux, c_x, c_u, c_xx, c_ux, c_uu, x_final):
+    def backward_pass_ddp(f_x, f_u, f_xx, f_ux, c_x, c_u, c_xx, c_ux, c_uu, x_final, xdes):
         t_c, t_c_x, t_c_xx = terminal_expansion(x_final)
         V_x = t_c_x
         V_xx = t_c_xx
@@ -196,8 +202,8 @@ def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
         return K, k
     
     @equinox.filter_jit
-    def backward_pass(f_x, f_u, c_x, c_u, c_xx, c_ux, c_uu, x_final):
-        t_c, t_c_x, t_c_xx = terminal_expansion(x_final)
+    def backward_pass(f_x, f_u, c_x, c_u, c_xx, c_ux, c_uu, x_final, xdes):
+        t_c, t_c_x, t_c_xx = terminal_expansion(x_final, xdes)
         V_x = t_c_x
         V_xx = t_c_xx
 
@@ -241,7 +247,7 @@ def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
     # NEW: Forward Pass with Discrete Line Search (vectorized over alpha)
     # --------------------------------------------------------------------
     @equinox.filter_jit
-    def forward_pass_ls(X, U, K, k, alpha_candidates):
+    def forward_pass_ls(X, U, xdes, K, k, alpha_candidates):
         """
         For a candidate array of alphas, rollout the new controls and compute
         the trajectory cost for each. Then select the best alpha.
@@ -266,6 +272,7 @@ def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
                     qpos=dx.qpos.at[:].set(X[0][:nq]),
                     qvel=dx.qvel.at[:].set(X[0][nq:])
                 )
+            dx = ctx.set_target(dx,xdes)
             dx_final, (_, U_new, C_partial) = jax.lax.scan(step_fn_rollout, dx, (K, k, U, X[:-1]))
             term_cost = terminal_cost_fn(dx_final)
             total_cost = jnp.sum(C_partial) + term_cost
@@ -279,29 +286,29 @@ def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
         return best_U, best_cost
  
     @equinox.filter_jit
-    def forward_pass(X, U, K, k):
+    def forward_pass(X, U, xdes, K, k):
         # Define candidate alphas (for example, 1.0, 0.5, 0.25, 0.125).
         alpha_candidates = jnp.array([1.00000000e+00, 9.09090909e-01,
                         6.83013455e-01, 4.24097618e-01,
                         2.17629136e-01, 9.22959982e-02,
                         3.23491843e-02, 9.37040641e-03,
                         2.24320079e-03, 4.43805318e-04, 0.00000001], dtype=jnp.float64)
-        return forward_pass_ls(X, U, K, k, alpha_candidates)
+        return forward_pass_ls(X, U, xdes, K, k, alpha_candidates)
     
-    def ilqr_step(U0):
+    def ilqr_step(x0, U0, xdes):
         U = U0
-        X, U_out, C = simulate_trajectory_ilqr(qpos_init, U, step_fn, ctx)
-        f_x, f_u, c_x, c_u, c_xx, c_ux, c_uu = linearize_dynamics_and_cost(X, U)
-        K, k = backward_pass(f_x, f_u, c_x, c_u, c_xx, c_ux, c_uu, X[-1])
-        U_new, C_new = forward_pass(X, U, K, k)
+        X, U_out, C = simulate_trajectory_ilqr(x0, U,xdes, step_fn, ctx)
+        f_x, f_u, c_x, c_u, c_xx, c_ux, c_uu = linearize_dynamics_and_cost(X, U, xdes)
+        K, k = backward_pass(f_x, f_u, c_x, c_u, c_xx, c_ux, c_uu, X[-1], xdes)
+        U_new, C_new = forward_pass(X, U,xdes, K, k)
         return U_new, C_new
     
-    def ddp_step(U0):
+    def ddp_step(x0, U0, xdes):
         U = U0
-        X, U_out, C = simulate_trajectory_ilqr(qpos_init, U, step_fn, ctx)
-        f_x, f_u, f_xx, f_ux, c_x, c_u, c_xx, c_ux, c_uu = linearize_dynamics_and_cost_ddp(X, U)
-        K, k = backward_pass_ddp(f_x, f_u, f_xx, f_ux, c_x, c_u, c_xx, c_ux, c_uu, X[-1])
-        U_new, C_new = forward_pass(X, U, K, k)
+        X, U_out, C = simulate_trajectory_ilqr(x0, U,xdes, step_fn, ctx)
+        f_x, f_u, f_xx, f_ux, c_x, c_u, c_xx, c_ux, c_uu = linearize_dynamics_and_cost_ddp(X, U, xdes)
+        K, k = backward_pass_ddp(f_x, f_u, f_xx, f_ux, c_x, c_u, c_xx, c_ux, c_uu, X[-1], xdes)
+        U_new, C_new = forward_pass(X, U,xdes,  K, k)
         return U_new, C_new
     
     step = ddp_step if ddp else ilqr_step
@@ -309,30 +316,35 @@ def make_ilqr_step(qpos_init, step_fn, jac_fn, ctx):
 
 @dataclass
 class ILQR:
-    ilqr_step: Callable[[jnp.ndarray], jnp.ndarray]
+    ilqr_step: Callable[[jnp.ndarray, jnp.ndarray, jnp.ndarray], jnp.ndarray]
 
-    def solve(self, U0: jnp.ndarray, tol=1e-6, max_iter=50):
+    def solve(self, X0:jnp.ndarray, U0: jnp.ndarray, xdes: jnp.ndarray,  tol=1e-5, max_iter=50):
         U = U0
-        prev_cost = jnp.inf
-        total_cost = jnp.inf
+        prev_cost_mean = jnp.inf
+        prev_cost = jnp.inf * jnp.ones(X0.shape[0])
+        total_cost_mean = jnp.inf
         for i in range(max_iter):
             now = time.time()
-            U_new, C = self.ilqr_step(U)
-            total_cost = jnp.sum(C)
-            print(f"\nIteration {i}: cost={total_cost}")
-            print(f"Time: {time.time() - now}")
+            U_new, C = jax.vmap(self.ilqr_step)(X0, U, xdes) # C size of batch
+            total_cost_mean = jnp.mean(C) 
+            print(f"\nIteration {i} :")
+            print(f"Computing time: {time.time() - now}")
+            print(f"Iteration {i}: Average cost={total_cost_mean}")
 
             # Check for cost improvement
-            improvement = prev_cost - total_cost
-            if improvement < 0:
+            improvement_mean = prev_cost_mean - total_cost_mean
+            improvement = prev_cost - C
+            if improvement_mean < 0:
                 # If cost got worse, you might consider adjustments or break
                 # For now, we just proceed; you could implement line-search here
                 pass
 
             # Check convergence by improvement and/or by norm of control changes
-            if jnp.abs(improvement) < tol:
-                print(f"Converged at iteration {i} with cost={total_cost}")
+            if jnp.abs(improvement_mean) < tol:
+                print(f"Converged at iteration {i} with cost={total_cost_mean}")
                 break
+
+            print(f"Trajectory optimised : {jnp.sum(jnp.abs(improvement) < tol)}/{ len(improvement)}" )
 
             # Check norm of update to controls
             control_diff_norm = jnp.linalg.norm(U_new - U)
@@ -342,9 +354,9 @@ class ILQR:
                 break
 
             U = U_new
-            prev_cost = total_cost
+            prev_cost_mean = total_cost_mean
 
-        return U, total_cost
+        return U, total_cost_mean
 
 # ------------------------------------------------------------------------
 # Define a simple ILQR context data structure for the outer while_loop.

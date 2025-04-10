@@ -14,6 +14,7 @@ class Context:
     running_cost: Callable[[mjx.Data], jnp.ndarray]
     terminal_cost: Callable[[mjx.Data], jnp.ndarray]
     set_control: Callable[[mjx.Data, jnp.ndarray], mjx.Data]
+    set_target: Callable[[mjx.Data], jnp.ndarray]
 
     # Configuration
     lr: float  # learning rate
