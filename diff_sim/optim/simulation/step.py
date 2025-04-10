@@ -262,8 +262,29 @@ def make_step_fn_fd(ctx: Context):
         d_dx_in = jax.tree.map(float0_to_zeros, d_dx_in)
         dx_out = step_fn(dx_in, u_in)
 
+        # Convert float0 leaves in 'g' to zeros
+        def map_tangent_to_dinput(diff_tree, grad_tree):
+            def fix_leaf(d_leaf, g_leaf):
+                if jax.dtypes.result_type(g_leaf) == jax.dtypes.float0:
+                    return jnp.zeros_like(d_leaf)
+                else:
+                    return g_leaf
+
+            return jax.tree_map(fix_leaf, diff_tree, grad_tree)
+        
+        def map_dinput_to_tangent(diff_tree, grad_tree):
+            def fix_leaf(d_leaf, g_leaf):
+                if jax.dtypes.result_type(d_leaf) == jax.dtypes.float0:
+                    return d_leaf
+                else:
+                    return g_leaf
+
+            return jax.tree_map(fix_leaf, diff_tree, grad_tree)
+
+
+        d_dx_in_mapped = map_tangent_to_dinput(dx_in, d_dx_in)
         # Flatten dx_in, dx_out, and controls
-        d_dx_in_array, _ = ravel_pytree(d_dx_in)
+        d_dx_in_array, _ = ravel_pytree(d_dx_in_mapped)
         d_u_in_array, _ = ravel_pytree(d_u_in)
         dx_array, _ = ravel_pytree(dx_in)
         dx_out_array, _ = ravel_pytree(dx_out)
@@ -397,6 +418,8 @@ def make_step_fn_fd(ctx: Context):
         u_tangent = Ju_array.T @ d_u_in_array # [dx by 2] @ 2
         dx_out_array_tangent = x_tangent + u_tangent # dx
         dx_out_tangent = unravel_dx(dx_out_array_tangent)
+
+        dx_out_tangent = map_dinput_to_tangent(d_dx_in, dx_out_tangent)
         # jax.debug.print("dx_out_tangent shape 0: {dx_out_tangent}", dx_out_tangent=dx_out_array_tangent.shape)
         # dx_out_tangent = jax.tree_map(lambda l1: jnp.zeros_like(l1), dx_out)
         # jax.debug.print("dx_out_tangent shape 1: {dx_out_tangent}", dx_out_tangent=dx_out_array_tangent.shape)
