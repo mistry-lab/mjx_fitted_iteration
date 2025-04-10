@@ -7,26 +7,6 @@ from diff_sim.optim.simulation.fd_cache import build_fd_cache
 from diff_sim.context.meta_context import Context
 from mujoco import mjx
 
-
-def convert_one_leaf(p_leaf, t_leaf):
-    # If the tangent leaf is a SymbolicZero, build a zeros array
-    # that matches the primal leaf's shape and dtype.
-    if isinstance(t_leaf, Zero):
-        return jnp.zeros_like(p_leaf)
-    else:
-        # If it's already a normal array, leave it as-is.
-        return t_leaf
-
-def make_zero(p_leaf):
-        return jnp.zeros_like(p_leaf)
-
-def float0_to_zeros(p_leaf):
-    if jax.dtypes.result_type(p_leaf) == jax.dtypes.float0:
-        jax.debug.print("float0_to_zeros: {p_leaf}", p_leaf=p_leaf)
-        return jnp.zeros_like(p_leaf)
-    else:
-        return p_leaf
-
 def _upscale(x):
     if "dtype" in dir(x):
         if x.dtype == jnp.int32:
@@ -259,7 +239,6 @@ def make_step_fn_fd(ctx: Context):
         """
         dx_in, u_in = primal_args
         d_dx_in, d_u_in = tangent_args
-        d_dx_in = jax.tree.map(float0_to_zeros, d_dx_in)
         dx_out = step_fn(dx_in, u_in)
 
         # Convert float0 leaves in 'g' to zeros
