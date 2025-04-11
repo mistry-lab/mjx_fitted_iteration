@@ -81,8 +81,16 @@
 
     </worldbody>
 
+    <default>
+        <default class="position">
+        <position kp="2" ctrllimited="true" forcelimited="true" forcerange="-10.5 10.5"  ctrlrange="-6. 6."/>
+        </default>
+    </default>
+
     <actuator>
-        <motor name="proximal" joint="proximal" gear="3"/>
-        <motor name="distal" joint="distal" gear="1.5"/>
+        <!-- <motor name="proximal" joint="proximal" gear="3"/>
+        <motor name="distal" joint="distal" gear="1.5"/> -->
+        <position class="position" name="proximal" joint="proximal"  />
+        <position class="position" name="distal" joint="distal" />
     </actuator>
 </mujoco>

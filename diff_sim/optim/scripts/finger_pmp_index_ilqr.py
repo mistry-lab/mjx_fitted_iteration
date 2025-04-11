@@ -10,7 +10,9 @@ from diff_sim.utils.mj_viewers import visualise_traj_generic
 from diff_sim.optim.meta_context import Context
 from diff_sim.optim.simulation.step import make_step_fn, make_step_fn_fd
 from diff_sim.optim.ilqr import ILQR, make_ilqr_step, simulate_trajectory_ilqr
-from diff_sim.utils.math_helper import angle_axis_to_quaternion, quaternion_difference, quaternion_to_angle_axis
+from diff_sim.utils.math_helper import angle_axis_to_quaternion, quaternion_to_angle_axis
+# Rotation matrix cost
+# from mujoco.mjx._src.math import quat_to_mat, axis_angle_to_quat
 
 # Compilation option
 jax.config.update("jax_compilation_cache_dir", "/tmp/jax_cache")
@@ -34,24 +36,38 @@ if __name__ == "__main__":
 
         def running_cost(dx):
             pos_finger = dx.qpos[2]
-            # quat_spinner = angle_axis_to_quaternion(jnp.array([0.,pos_finger,0.]))
             quat_goal = dx.mocap_quat[0]
-            # Quaternion diff does not work ??
-            # cost_quat = 10. * jnp.sum(quaternion_difference(quat_spinner,quat_goal)**2)
-            # jax.debug.print("quat_spinner : {}", quat_spinner)
-            # jax.debug.print("quat_goal : {}", quat_goal)
-            # jax.debug.print("cost_quat : {}", cost_quat)
-            pos_ref = - quaternion_to_angle_axis(quat_goal)[1] # Weird bug between visualisation and ref angle
-            cost_ang = 0.002*(pos_ref - pos_finger)**2
-            u = dx.ctrl
-            return 0.002 * jnp.sum(u**2) + cost_ang
+
+            # Quaternion difference cost, failure
+            # quat_spinner = angle_axis_to_quaternion(jnp.array([0.,-pos_finger,0.]))
+            # c_ang = 0.002 * jnp.sum(quaternion_difference(quat_spinner,quat_goal)**2)
+            # Rotation matrix cost, working
+            # quat_spinner = axis_angle_to_quat(jnp.array([0.,1.,0.]), jnp.array([-pos_finger]))
+            # costR = 0.002 * jnp.sum((quat_to_mat(quat_spinner)  - quat_to_mat(quat_goal))**2)
+            # Angular position cost
+            pos_ref = - quaternion_to_angle_axis(quat_goal)[1] # Minus sign between visualisation and mocap ?
+            c_ang = 0.002*(pos_ref - pos_finger)**2
+
+            # u = dx.ctrl # Torque control
+            u = dx.ctrl - dx.qpos[:2]  # Position control
+            c_vel = 0.0001 * jnp.sum(dx.qvel**2)
+            return 0.002 * jnp.sum(u**2) + c_ang  + c_vel
 
         def terminal_cost(dx):
             pos_finger = dx.qpos[2]
             quat_goal = dx.mocap_quat[0]
+
+            # Quaternion difference cost, failure
+            # quat_spinner = angle_axis_to_quaternion(jnp.array([0.,-pos_finger,0.]))
+            # c_ang = 4. * jnp.sum(quaternion_difference(quat_spinner,quat_goal)**2)
+            # Rotation matrix cost, working
+            # quat_spinner = axis_angle_to_quat(jnp.array([0.,1.,0.]), jnp.array([-pos_finger]))
+            # c_ang = 4. * jnp.sum((quat_to_mat(quat_spinner)  - quat_to_mat(quat_goal))**2)
+            # Angular position costs
             pos_ref = - quaternion_to_angle_axis(quat_goal)[1]
-            cost_ang = 4.*(pos_ref - pos_finger)**2
-            return cost_ang
+            c_ang = 4.*(pos_ref - pos_finger)**2
+
+            return c_ang
 
         def set_control(dx, u):
             return dx.replace(ctrl=dx.ctrl.at[:].set(u))
@@ -61,8 +77,6 @@ if __name__ == "__main__":
                 # mocap_pos=dx.mocap_pos.at[:].set(xdes[:3]), 
                 mocap_quat=dx.mocap_quat.at[:].set(xdes[3:])
                 )
-
-        # def set_mocap(dx,mocap)
 
         # 1) General context for the optimisation
         ctx = Context(
@@ -104,8 +118,8 @@ if __name__ == "__main__":
         Nsteps, nu = 300, 2
 
         # 2) Select a step function (Implicit, FD or AD)
-        step_fn = make_step_fn(ctx) # Implicit
-        # step_fn = make_step_fn_fd(ctx)# FD, TODO: does not work due to custom_vjp
+        # step_fn = make_step_fn(ctx) # Implicit
+        step_fn = make_step_fn_fd(ctx)# FD, TODO: does not work due to custom_vjp
         # TODO : AD
 
         # 4.3: Create the batch module
