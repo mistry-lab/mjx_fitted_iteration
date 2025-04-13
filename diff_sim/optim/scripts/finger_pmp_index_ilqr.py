@@ -105,9 +105,6 @@ if __name__ == "__main__":
                                 [-0.8,  0. , -0.7],
                                 [-0.9,  0. , -0.55],
                                 [-1.0,  0. , -0.8]])
-        
-        xdes_pos = jnp.zeros((4,3))
-        
 
         def get_xdes(y_angle):
             pos = jnp.array([-.2, 0, -.35])
@@ -118,9 +115,8 @@ if __name__ == "__main__":
         Nsteps, nu = 300, 2
 
         # 2) Select a step function (Implicit, FD or AD)
-        # step_fn = make_step_fn(ctx) # Implicit
-        step_fn = make_step_fn_fd(ctx)# FD, TODO: does not work due to custom_vjp
-        # TODO : AD
+        # step_fn = make_step_fn(ctx)
+        step_fn = make_step_fn_fd(ctx)
 
         # 4.3: Create the batch module
         ilqr_step = make_ilqr_step(

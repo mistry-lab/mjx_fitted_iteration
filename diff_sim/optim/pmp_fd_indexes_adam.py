@@ -1,167 +1,128 @@
-import time
-from dataclasses import dataclass
-from typing import Callable, Any
-
 import jax
 import jax.numpy as jnp
-import equinox as eqx
 import optax
-import mujoco.mjx as mjx 
-
+import equinox
+import time
+from pydantic.dataclasses import dataclass
+from typing import Callable
 from diff_sim.optim.meta_context import Context
- 
-# ------------------------------------------------------------------------------
-# 1. An Equinox Module for storing B x T x nu controls and simulating them
-# ------------------------------------------------------------------------------
-class BatchTrajectory(eqx.Module):
-    """
-    Stores a batch of controls of shape (B, T, nu). 
-    Handles simulating B parallel trajectories, each of length T, 
-    and accumulating cost.
-    """
-    # Trainable parameter:
-    controls: jnp.ndarray  # shape = (B, T, nu)
- 
-    # Static fields (not parameters). 
-    # We store large objects or callables as eqx.static_field().
-    mx: mjx.Model = eqx.static_field()
-    qpos_init: jnp.ndarray
+from mujoco import mjx
+from diff_sim.optim.ilqr import simulate_trajectory_ilqr
 
-    step_fn: Callable[[mjx.Data, jnp.ndarray], mjx.Data] = eqx.static_field() 
-    set_ctrl_fn: Callable[[Any, jnp.ndarray], Any] = eqx.static_field()
-    running_cost_fn: Callable[[Any], float] = eqx.static_field()
-    terminal_cost_fn: Callable[[Any], float] = eqx.static_field()
- 
-    def __call__(self) -> float:
-        """
-        Returns the scalar loss across the entire batch,
-        e.g. the average cost of B parallel trajectories.
-        """
-        # We'll vmap over the batch dimension. 
-        # For each b in [0..B-1], we do one trajectory simulation and 
-        # compute a cost. Then we average or sum across the batch.
- 
-        B = self.controls.shape[0]
- 
-        def single_trajectory_loss(b_idx: int) -> float:
-            """
-            Simulate a single trajectory for the batch index b_idx.
-            Return total cost (running + terminal).
-            """
-            # Create data, set initial position
-            dx0 = mjx.make_data(self.mx)
-            dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(self.qpos_init[b_idx]))
-            dx0 = mjx.step(self.mx, dx0)  # initial sync
- 
-            # We store states and costs across T steps
-            # But if you only need total cost, we can accumulate directly.
- 
-            def scan_body(dx, t):
-                # pick control from self.controls
-                u = self.controls[b_idx, t]  # shape (nu,)
-                dx_next = self.step_fn(dx, u)
- 
-                cost_t = self.running_cost_fn(dx_next)
-                return dx_next, cost_t
- 
-            T = self.controls.shape[1]
-            dx_final, costs = jax.lax.scan(scan_body, dx0, jnp.arange(T))
-            total_cost = jnp.sum(costs) + self.terminal_cost_fn(dx_final)
-            return total_cost
- 
-        # Vectorize over b_idx in [0..B)
-        costs_b = jax.vmap(single_trajectory_loss)(jnp.arange(B))
- 
-        # Return average or sum across batch. Adjust to your preference:
-        return jnp.mean(costs_b)
- 
- 
-# ------------------------------------------------------------------------------
-# 2. Building a "make_batch_loss_module" style constructor (optional)
-# ------------------------------------------------------------------------------
-def make_batch_loss_module(
-    qpos_init: jnp.ndarray,
+def make_pmp_step(
     step_fn: Callable[[mjx.Data, jnp.ndarray], mjx.Data],
     ctx: Context
-) -> BatchTrajectory:
+):
     """
-    Utility to create a BatchTrajectory module with random initialization 
-    for the controls of shape (B, T, nu).
+    Builds a single-step update function for the PMP solver using Adam.
+    Returns a function pmp_step(x0, U, xdes, opt_state, optimizer) -> (U_new, cost_new, opt_state_new).
     """
-    # Example init for controls
-    init_controls = 0.1 * jax.random.normal(jax.random.PRNGKey(ctx.seed), (ctx.batch, ctx.nsteps, ctx.ctrl_dim)) # TODO: Fix this 
-    return BatchTrajectory(
-        controls=init_controls,
-        mx=ctx.mx,
-        qpos_init=qpos_init,
-        step_fn=step_fn,
-        set_ctrl_fn=ctx.set_control,
-        running_cost_fn=ctx.running_cost,
-        terminal_cost_fn=ctx.terminal_cost,
-    )
- 
+    @equinox.filter_jit
+    def total_cost(U, x0, xdes):
+        """
+        Forward-simulate for the entire horizon and sum the running + terminal cost.
+        """
+        X, _, C = simulate_trajectory_ilqr(x0, U, xdes, step_fn, ctx)
+        return jnp.sum(C)
 
-# 4.5: Evaluate or visualize one trajectory (say b=0)
-# or pick random b, etc.
-# We'll define a "simulate_trajectory" style function manually:
-@jax.jit
-def simulate_trajectory_for_b(m: BatchTrajectory, b_idx: int):
-    dx0 = mjx.make_data(m.mx)
-    dx0 = dx0.replace(qpos=dx0.qpos.at[:].set(m.qpos_init[b_idx]))
-    dx0 = mjx.step(m.mx, dx0)
+    @equinox.filter_jit
+    def pmp_step(x0, U, xdes, opt_state, optimizer):
+        """
+        Single iteration of the PMP solver:
+          1) Compute gradient of total cost wrt U.
+          2) Update U with Adam.
+          3) Return new U, new cost, and updated opt_state.
+        """
+        def cost_fn(U_):
+            return total_cost(U_, x0, xdes)
 
-    def scan_body(dx, t):
-        u = m.controls[b_idx, t]
-        dx_next = mjx.step(m.mx, m.set_ctrl_fn(dx, u))
-        state = jnp.concatenate([dx_next.qpos, dx_next.qvel])
-        return dx_next, state
+        grads = jax.grad(cost_fn)(U)
+        updates, new_opt_state = optimizer.update(grads, opt_state, U)
+        U_new = optax.apply_updates(U, updates)
 
-    T_ = m.controls.shape[1]
-    _, states = jax.lax.scan(scan_body, dx0, jnp.arange(T_))
-    return states  # shape = (T_, qpos_dim+qvel_dim)
+        cost_new = cost_fn(U_new)
+        return U_new, cost_new, new_opt_state
 
- 
-# ------------------------------------------------------------------------------
-# 3. Example training loop using Optax + Adam
-# ------------------------------------------------------------------------------
-def train_batch_trajectories(
-    model_module: BatchTrajectory,
-    num_steps: int = 1000,
-    lr: float = 1e-3
-) -> BatchTrajectory:
+    return pmp_step
+
+
+@dataclass
+class PMP:
     """
-    Example training loop that runs an Adam optimizer on the 
-    batch trajectory problem.
+    A class-based PMP solver, mirroring the iLQR class structure.
     """
-    # 1) Create the optimizer and its state
-    optimizer = optax.adam(lr)
-    opt_state = optimizer.init(eqx.filter(model_module, eqx.is_array))
- 
-    # 2) Define a loss-and-grad function
-    # We will jit+grad the model's __call__:
-    @jax.jit
-    def loss_and_grad(model: BatchTrajectory):
-        loss_val = model()  # calls the module => returns the cost
-        grads = jax.grad(lambda m: m())(model)
-        return loss_val, grads
- 
-    # 3) Training loop
-    m = model_module
-    for step_idx in range(num_steps):
-        now = time.time()
-        loss_val, grads = loss_and_grad(m)
-        updates, opt_state_ = optimizer.update(
-            grads, opt_state, params=m
-        )
-        # Apply the updates
-        m = eqx.apply_updates(m, updates)
-        opt_state = opt_state_
-        print(f"Time: {time.time() - now}")
-        print(f"Loss={loss_val:0.6f}")
-        print(f"\n--- Iteration {step_idx} ---")
- 
-        if step_idx % 50 == 0:
-            print(f"Step={step_idx}, Loss={loss_val:0.6f}")
- 
-    return m
- 
+    pmp_step: Callable  # (x0, U, xdes, opt_state, optimizer) -> (U_new, cost_new, opt_state_new)
+
+    def solve(
+        self,
+        X0: jnp.ndarray,       # shape (batch, nq) or similar
+        U0: jnp.ndarray,       # shape (batch, nsteps, nu)
+        xdes: jnp.ndarray,     # shape (batch, ?)
+        tol: float = 1e-5,
+        max_iter: int = 50,
+        lr: float = 1e-2
+    ):
+        """
+        Solves for the optimal control sequence using Adam-based PMP.
+        - X0: initial states (batch x ...)
+        - U0: initial guess for controls (batch x nsteps x nu)
+        - xdes: desired target states (batch x ...)
+        - tol: convergence tolerance
+        - max_iter: max iterations
+        - lr: learning rate for Adam
+        Returns: (U_final, cost_final_mean)
+        """
+        batch_size = X0.shape[0]
+
+        # 1) Initialize the Adam optimizer
+        optimizer = optax.adam(learning_rate=lr)
+
+        # 2) Build an optimizer state for each element of the batch
+        def init_opt_state_fn(U_i):
+            return optimizer.init(U_i)
+
+        opt_state = jax.vmap(init_opt_state_fn)(U0)
+
+        # 3) Initialize iteration variables
+        U = U0
+        prev_cost_mean = jnp.inf
+        prev_cost = jnp.inf * jnp.ones(X0.shape[0])
+        total_cost_mean = jnp.inf
+
+        for i in range(max_iter):
+            now = time.time()
+            U_new, C, opt_state_new = jax.vmap(self.pmp_step, in_axes=(0,0,0,0,None))(
+                X0, U, xdes, opt_state, optimizer
+            )
+            total_cost_mean = jnp.mean(C)
+            print(f"\nIteration {i} :")
+            print(f"Computing time: {time.time() - now}")
+            print(f"Iteration {i}: Average cost={total_cost_mean}")
+
+            improvement_mean = prev_cost_mean - total_cost_mean
+            improvement = prev_cost - C
+
+            if improvement_mean < 0:
+                pass
+
+            # Convergence check by improvement
+            if jnp.abs(improvement_mean) < tol:
+                print(f"Converged at iteration {i} with cost={float(total_cost_mean):0.6f}")
+                U = U_new
+                break
+
+            print(f"Trajectory optimized: {jnp.sum(jnp.abs(improvement) < tol)}/ {len(improvement)}")
+
+            # Check the norm of the control update
+            ctrl_diff_norm = jnp.linalg.norm(U_new - U)
+            if ctrl_diff_norm < tol:
+                print(f"Control update norm below tolerance at iteration {i}")
+                U = U_new
+                break
+
+            # Update for next iteration
+            U = U_new
+            opt_state = opt_state_new
+            prev_cost_mean = total_cost_mean
+
+        return U, total_cost_mean
